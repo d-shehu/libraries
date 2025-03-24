@@ -1,0 +1,5 @@
+ollama
+openai
+pydantic
+tiktoken
+transformers
