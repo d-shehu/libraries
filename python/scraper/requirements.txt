@@ -1,0 +1,4 @@
+fake_useragent
+ipython
+selenium
+webdriver_manager
