@@ -200,8 +200,10 @@ def fnFetchJobs(scraper, url, listJobs = [], mode = JOBS_MODE_SEARCH, maxPages =
                 # Go through the other pages and fetch jobs from each
                 button = paginationButtons[iPage]
                 iPage = iPage + 1
+                # Break if exceeding maxPages
+                if iPage > maxPages:
+                    break
                 print(f"Page {iPage} of {numPages}")
-                
                 try:
                     # Click on next page button and wait for it to load
                     # and then process the page.
