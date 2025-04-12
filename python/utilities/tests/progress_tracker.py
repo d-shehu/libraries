@@ -1,6 +1,7 @@
 import time
 
-from .common import *
+from .common           import *
+from .progress_tracker import *
 
 # Basic test to make sure key functions work. Pass in the class of tracker.
 def fnTestProgressTracker(progressTrackerClass, description, minVal, maxVal, stepVal, delayInSecs = .100):

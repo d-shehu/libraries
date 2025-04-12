@@ -7,9 +7,16 @@ import numpy as np
 import os
 from pydantic import BaseModel
 import requests
+import sys
 import tiktoken
 from transformers import AutoTokenizer
 import time
+
+# User module and logging
+from core import user_module, logs
+
+# Aliases
+LogLine = logs.LogLine
 
 class LLMClientType(Enum):
     OLLAMA = 1
@@ -68,15 +75,16 @@ class LLMResponse:
         self.status       = LLMResponseStatus.UNKNOWN
 
 class LLMModel:
-    def __init__(self, info, tag = "", verboseOutput = False):
+    def __init__(self, info, logger, tag = "", verboseOutput = False):
         self.client        = None
         self.info          = info
+        self.logger        = logger
         self.tag           = tag
         self.verboseOutput = verboseOutput
         self.options       = LLMOptions()
 
     def connectToClient(self, secrets) -> bool:
-        raise Exception("Error: LLMModel's connectToClient must be overriden in child class.")
+        raise Exception("LLMModel's connectToClient must be overriden in child class.")
 
     def chat(self, messages, outputFormat = None):
         answer = None
@@ -89,32 +97,31 @@ class LLMModel:
                 outputFormatJSON = outputFormat.model_json_schema()
 
             if self.verboseOutput:
-                print("Info: Messages sent: ")
+                self.logger.debug("Messages sent: ")
                 for message in messages:
-                    print("Info: Role: ", message.role)
-                    print("Info: Content: ", message.content)
+                    self.logger.debug(f"Role: message.role")
+                    self.logger.debug(f"Content: message.content")
     
             response = self._doChat(messages, outputFormatJSON) # Actually send the request and get response
             if self.verboseOutput:
-                print("Info: Response: ", response)
+                self.logger.debug(LogLine("Response: ", response))
             parsedResponse = self._parseResponse(response)
             # TODO: revisit how to handle multiple responses. Not to be confused with streaming.
             firstMessage = parsedResponse.messages[0]
 
             if outputFormatJSON is not None:
                 if self.verboseOutput:
-                    print("Info: Response content: ", json.dumps(firstMessage.content, indent = 4))
+                    self.logger.debug(LogLine("Response content: ", json.dumps(firstMessage.content, indent = 4)))
                 answer = outputFormat.model_validate_json(firstMessage.content)
             else:
                 answer = firstMessage.content
 
             elapsed = time.time() - start
             if self.verboseOutput:
-                print(f"Query took: {elapsed}s")
+                self.logger.debug(f"Query took: {elapsed}s")
 
         except Exception as e:
-            print("Error: unable to send message to client")
-            print(e)
+            self.logger.exception("Enable to send message to client.")
 
         return answer
 
@@ -126,27 +133,27 @@ class LLMModel:
         return modelHandle
 
     def _parseResponse(self, response):
-        raise Exception("Error: LLMModel's parseResponse must be overriden in child class.")
+        raise Exception("LLMModel's parseResponse must be overriden in child class.")
         
     def _doChat(self, messages, responseFormatJson = None):
-        raise Exception("Error: LLMModel's doChat must be overriden in child class.")
+        raise Exception("LLMModel's doChat must be overriden in child class.")
 
     def _countTokens(self, content):
-        raise Exception("Error: LLMModel's getTokenizer must be overriden in child class.")
+        raise Exception("LLMModel's getTokenizer must be overriden in child class.")
 
     def getTokenCountFromMessages(self, messages):
         totalTokenCount = 0
 
         if self.verboseOutput:
-            print("Info: count tokens for num messages: ", len(messages))
+            self.logger.debug(LogLine("Count tokens for num messages: ", len(messages)))
         for message in messages:
             totalTokenCount += self._countTokens(message.content)
 
         return totalTokenCount
         
 class OpenAIModel(LLMModel):
-    def __init__(self, info, tag = "", verboseOutput = False):
-        super().__init__(info, tag, verboseOutput)
+    def __init__(self, info, logger, tag = "", verboseOutput = False):
+        super().__init__(info, logger, tag, verboseOutput)
         self.encoding = tiktoken.encoding_for_model(info["name"])
 
     def connectToClient(self, secrets):
@@ -160,8 +167,7 @@ class OpenAIModel(LLMModel):
             
             success = True
         except Exception as e:
-            print("Error: unable to connect to Open AI")
-            print(e)
+            self.logger.exception("Unable to connect to Open AI.")
 
         return success
 
@@ -186,17 +192,16 @@ class OpenAIModel(LLMModel):
             
         except Exception as e:
             parsedResponse.status = LLMResponseStatus.FAILED
-            print("Error: while trying to parse response")
-            print(e)
+            self.logger.exception("While trying to parse response.")
 
         return parsedResponse
 
     def _doChat(self, messages, responseFormatJson = None):
         if responseFormatJson is not None:
-            raise Exception("Error: json response not currently supported with Open AI LLM")
+            raise Exception("JSON response not currently supported with Open AI LLM")
 
         if self.verboseOutput:
-            print("Info: chatting with OpenAI model " + self._getModelHandle())
+            self.logger.debug(LogLine("Chatting with OpenAI model " + self._getModelHandle()))
             
         response = self.client.chat.completions.create(
             model             = self._getModelHandle(),
@@ -213,9 +218,10 @@ class OpenAIModel(LLMModel):
 # when compared to calling APIs directly using Postman or curl. 
 # Sometimes output is significantly different, unusable or there is a
 # significant increase in memory usage. 
-class OllamaClient:
-    def __init__(self, url, api_key = "", verboseOutput = False):
+class OllamaClient(LLMModel):
+    def __init__(self, url, logger, api_key = "", verboseOutput = False):
         self.url           = url
+        self.logger        = logger
         self.api_key       = api_key
         self.session       = requests.Session()
         self.verboseOutput = verboseOutput
@@ -239,30 +245,30 @@ class OllamaClient:
         preparedRequest = ollamaRequest.prepare()
 
         if self.verboseOutput:
-            print("Info: Sending request to Ollama:")
-            print(f"URL: {preparedRequest.url}")
-            print(f"Method: {preparedRequest.method}")
-            print("Headers:")
+            self.logger.debug("Sending request to Ollama:")
+            self.logger.debug(f"URL: {preparedRequest.url}")
+            self.logger.debug(f"Method: {preparedRequest.method}")
+            self.logger.debug("Headers:")
             for header, value in preparedRequest.headers.items():
-                print(f"  {header}: {value}")
-            print(f"Body: {preparedRequest.body}")
-            print()
+                self.logger.debug(f"  {header}: {value}")
+            self.logger.debug(f"Body: {preparedRequest.body}")
+            self.logger.debug("")
 
         response = self.session.send(preparedRequest)
 
         responseJSON = response.json()
         if self.verboseOutput:
-            print("Info: Response from Ollama: ")
-            print("Info: type of Ollama: ", type(responseJSON))
-            print(responseJSON)
+            self.logger.debug("Response from Ollama: ")
+            self.logger.debug(LogLine("Type of Ollama: ", type(responseJSON)))
+            self.logger.debug(LogLine(responseJSON))
             
         return responseJSON
         
 class OllamaModel(LLMModel):
     DEFAULT_OLLAMA_CONTEXT_LEN = 2048
     
-    def __init__(self, info, tag, verboseOutput = False):
-        super().__init__(info, tag, verboseOutput)
+    def __init__(self, info, logger, tag, verboseOutput = False):
+        super().__init__(info, logger, tag, verboseOutput)
 
         # TODO: configure this via param
         self.maxRecommendedContextLength = 8192
@@ -292,12 +298,12 @@ class OllamaModel(LLMModel):
         saveDir = os.path.expanduser(f"~/models/{modelName}-tokenizer")
         if not os.path.isdir(saveDir):
             if self.verboseOutput:
-                print("Info: downloading tokenizer model: ", self.info["tokenizer"])
+                self.logger.debug(LogLine("Downloading tokenizer model: ", self.info["tokenizer"]))
             self.tokenizer = AutoTokenizer.from_pretrained(self.info["tokenizer"], token=secrets["HUGGING_FACE_TOKEN"])
             self.tokenizer.save_pretrained(os.path.expanduser(saveDir))
         else:
             if self.verboseOutput:
-                print("Info: tokenizer model on disk: ", self.info["tokenizer"])
+                self.logger.debug(LogLine("Tokenizer model on disk: ", self.info["tokenizer"]))
             self.tokenizer = AutoTokenizer.from_pretrained(saveDir)
         
     def connectToClient(self, secrets):
@@ -308,16 +314,15 @@ class OllamaModel(LLMModel):
                 del self.client
 
             if self.verboseOutput:
-                print("Info: connecting to Ollama client...")
+                self.logger.info("Connecting to Ollama client...")
 
-            self.client = OllamaClient(secrets["OLLAMA_API_HOST"], secrets["OLLAMA_API_KEY"], self.verboseOutput)
+            self.client = OllamaClient(secrets["OLLAMA_API_HOST"], self.logger, secrets["OLLAMA_API_KEY"], self.verboseOutput)
             
             self.__init_tokenizer(secrets)
             
             success = True
         except Exception as e:
-            print("Error: unable to connect to Ollama")
-            print(e)
+            self.logger.exception("Unable to connect to Ollama")
 
         return success
 
@@ -327,9 +332,9 @@ class OllamaModel(LLMModel):
     def __calculateContextLen(self, messages):
         numTokens = self.getTokenCountFromMessages(messages)
         if numTokens > self.maxModelContextLength:
-            print("Warning: content length is greater than model context.")
+            self.logger.warning("Content length is greater than model context.")
         if numTokens > self.maxRecommendedContextLength:
-            print("Warning: content lenght is greater than recommended context.")
+            self.logger.warning("Content lenght is greater than recommended context.")
 
         # Nearest power of 2 that is greater than actual number of tokens.
         # However no greater than max recommended or model context length and no less
@@ -359,21 +364,20 @@ class OllamaModel(LLMModel):
             parsedResponse.messages = [ LLMMessage(message["role"], message["content"]) ]
         except Exception as e:
             parsedResponse.status = LLMResponseStatus.FAILED
-            print("Error: while trying to parse response")
-            print(e)
+            self.logger.exception("Exception encountered while trying to parse response.")
 
         return parsedResponse
         
     def _doChat(self, messages, responseFormatJson = None):
 
         if self.verboseOutput:
-            print("Info: chatting with Ollama model " + self._getModelHandle())
+            self.logger.debug(LogLine("Chatting with Ollama model " + self._getModelHandle()))
 
         # Ollama specific option not supported with OpenAI API.
         self.options.num_ctx = self.__calculateContextLen(messages)                
         if self.verboseOutput:
-            print(f"Info: context length set to {self.options.num_ctx}")
-            print(f"Info: options: {self.options.__dict__}")
+            self.logger.debug(f"Context length set to {self.options.num_ctx}")
+            self.logger.debug(f"Options: {self.options.__dict__}")
 
         response = self.client.sendMessages(
             model = self._getModelHandle(), 
@@ -383,17 +387,19 @@ class OllamaModel(LLMModel):
 
         return response
         
-class MyLLMManager:
+class LLMManager(user_module.UserModule):
     def __init__(self, clientType, info, tag = "", verboseOutput = False):
+        super().__init__(sys.modules[__name__])
+        
         self.clientType    = clientType
         self.verboseOutput = verboseOutput
         
         if clientType == LLMClientType.OLLAMA:
-            self.llmModel = OllamaModel(info, tag, verboseOutput)
+            self.llmModel = OllamaModel(info, self.logger, tag, verboseOutput)
         elif clientType == LLMClientType.OPENAI:
-            self.llmModel = OpenAIModel(info, tag, verboseOutput)
+            self.llmModel = OpenAIModel(info, self.logger, tag, verboseOutput)
         else:
-            print("Error: unknown client type")
+            self.logger.error(LogLine("Unknown client type: ", clientType))
             self.llmModel = None
 
     def __del__(self):
@@ -405,8 +411,7 @@ class MyLLMManager:
         try:
             success = self.llmModel.connectToClient(secrets)  
         except Exception as e:
-            print("Error: could not load job search secrets")
-            print(e)
+            self.logger.exception("Could not load job search secrets")
     
         return success
 
@@ -420,12 +425,14 @@ class MyLLMManager:
         messagesToSend.append(LLMMessage(role, prompt))
 
         if self.verboseOutput:
-            print("Info: estimated input token count: ", self.llmModel.getTokenCountFromMessages(messagesToSend))
+            self.logger.debug(LogLine("Estimated input token count: ", 
+                                      self.llmModel.getTokenCountFromMessages(messagesToSend)))
 
         answer = self.llmModel.chat(messagesToSend, responseFormat)
 
         # TODO: clean this up
         if self.verboseOutput and answer is not None:
-            print("Info: estimated output token count: ", self.llmModel.getTokenCountFromMessages([LLMMessage("assistant", answer)]))
+            self.logger.debug(LogLine("Estimated output token count: ", 
+                              self.llmModel.getTokenCountFromMessages([LLMMessage("assistant", answer)])))
 
         return answer

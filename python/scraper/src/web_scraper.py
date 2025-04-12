@@ -16,14 +16,23 @@ from selenium.webdriver.chrome.service import Service as ChromiumService
 from webdriver_manager.chrome import ChromeDriverManager
 from webdriver_manager.core.os_manager import ChromeType
 
+import sys
 import time
 
+# User module and logging
+from core import user_module, logs
+
+# Aliases
+LogLine = logs.LogLine
+
+# Constants
 USE_DEFINED_TIMEOUT   = -1     # Users can override timeout for specific functions or use the one already defined.
 DEFAULT_TIMEOUT_SECS  = 5     # How long to wait before erroring out. 
 DEFAULT_SLEEP_SECS    = .250  # Balance between waiting too long to see if element has reloaded and thrashing CPU.
 
-class WebScraper:    
+class WebScraper(user_module.UserModule):    
     def __init__(self, width = 1920, height = 1080, timeout = DEFAULT_TIMEOUT_SECS, sleep = DEFAULT_SLEEP_SECS):
+        super().__init__(sys.modules[__name__])
         # Firefox seems to work better so defaulting to it.
         self.width           = width
         self.height          = height
@@ -34,10 +43,10 @@ class WebScraper:
 
     def __del__(self):
         if self.browser is not None:
-            print("Closing old selenium browser instance")
+            self.logger.debug("Closing old selenium browser instance")
             self.browser.quit()
         else:
-            print("Warning: nothing to cleanup as browser not initialized!")
+            self.logger.warning("Nothing to cleanup as browser not initialized!")
 
     def setTimeout(self, timeout):
         self.timeout = timeout
@@ -52,10 +61,10 @@ class WebScraper:
     def __getFirefoxBrowser(self, width, height):
         browser = None
         try:
-            print("Initializing Firefox driver...")
+            self.logger.debug("Initializing Firefox driver...")
             ua = UserAgent(browsers=['Firefox'])
             user_agent = ua.random # Randomize user agent to avoid getting locked out
-            print("Firefox user agent: ", user_agent)
+            self.logger.debug(LogLine("Firefox user agent: ", user_agent))
         
             opts = FirefoxOptions()
             opts.add_argument('--headless')
@@ -65,7 +74,7 @@ class WebScraper:
             browser = webdriver.Firefox(options=opts)
             browser.maximize_window()
         except Exception as e:
-            print("Unable to load browser service: ", e)
+            self.logger.exception("Unable to load browser service.")
             
         return browser
 
@@ -73,7 +82,7 @@ class WebScraper:
     def __getChromeBrowser(self, width, height):
         ua = UserAgent(browsers = ['chrome'])
         userAgent = ua.random
-        print("Chrome user agent: ", userAgent)
+        self.logger.debug(LogLine("Chrome user agent: " + userAgent))
         agentOverride = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/83.0.4103.53 Safari/537.36'
         
         service=ChromiumService(ChromeDriverManager(chrome_type=ChromeType.CHROMIUM).install())
@@ -98,10 +107,9 @@ class WebScraper:
                 self.browser.get(url)
                 isLoaded = True
             else:
-                print("Error: browser service is not initialized")
+                self.logger.error("Browser service is not initialized")
         except Exception as e:
-            print(f"Error: unexpected exception while loading {url}")
-            print(e)
+            self.logger.exception(f"Unexpected exception while loading: {url}")
 
         return isLoaded
 
@@ -115,8 +123,7 @@ class WebScraper:
             if self.browser is not None:
                 url = self.browser.current_url
         except Exception as e:
-            print("Error: unable to get current page url")
-            print(e)
+            self.logger.exception("Unable to get current page url.")
             
         return url
 
@@ -131,7 +138,7 @@ class WebScraper:
                 if window_handle != self.original_window:
                     listPopups.append(window_handle)
         except Exception as e:
-            print("Error: unable to scan for popups due to: ", e)
+            self.logger.exception("Unable to scan for popups.")
 
         return listPopups
             
@@ -161,7 +168,7 @@ class WebScraper:
                 if urlNew != "" and urlNew != "about:blank":
                     time.sleep(self.sleep)
         except Exception as e:
-            print("Error: unexpected exception while waiting for page to load: ", e)
+            self.logger.exception("Unexpected exception while waiting for page to load.")
 
         # Close the newly opened tab or window?
         if closeNew:
@@ -176,7 +183,7 @@ class WebScraper:
 
         # If blank assume page couldn't load
         if urlNew == "about:blank":
-            print("Warning: new page loaded was blank.")
+            self.logger.warning("New page loaded was blank.")
             urlNew = ""
 
         return urlNew
@@ -191,7 +198,7 @@ class WebScraper:
             success = True
         except Exception as e:
             if not suppressError:
-                print("Error: timed out while waiting for page to load new url")
+                self.logger.exception("Timed out while waiting for page to load new url.")
 
         return success
             
@@ -223,22 +230,21 @@ class WebScraper:
             elapsedTime = 0
             startTime = time.time()
             while matchingElement is None and (elapsedTime < timeout):
-                # print("Waiting for element to load ...")
                 try:
                     matchingElement = self.browser.find_element(byType, elem)
                 except NoSuchElementException: # still loading?
                     time.sleep(self.sleep)
                 except Exception as e: # other exception?
                     if not suppressError:
-                        print(f"Error: unexpected exception while getting {elem}: ", e)
+                        self.logger.error(LogLine(f"Unexpected exception while getting: {elem}: ", e))
                 elapsedTime = time.time() - startTime
                 
             if matchingElement is None and elapsedTime >= timeout:
                 if not suppressError:
-                    print(f"Error: timed out waiting for {elem} to load. Elapsed time: ", elapsedTime)
+                    self.logger.error(LogLine(f"Timed out waiting for {elem} to load. Elapsed time: ", elapsedTime))
         else:
             if not supressError:
-                print("Error: browser service is not initialized")
+                self.logger.error("Browser service is not initialized")
 
         return matchingElement
 
@@ -255,23 +261,22 @@ class WebScraper:
             startTime = time.time()
             
             while matchingElement is None and (elapsedTime < timeout):
-                # print("Waiting for element to load ...")
                 try:
                     matchingElement = parent.find_element(byType, elem)
                 except NoSuchElementException: # still loading?
                     time.sleep(self.sleep)
                 except Exception as e: # other exception?
                     if not suppressError:
-                        print(f"Error: unexpected exception while getting {elem}: ", e)
+                        self.logger.error(LogLine(f"Unexpected exception while getting {elem}: ", e))
                         
                 elapsedTime = time.time() - startTime
 
             if matchingElement is None and elapsedTime >= timeout:
                 if not suppressError:
-                    print(f"Error: timed out waiting for {elem} to load. Elapsed time: ", elapsedTime)
+                    self.logger.error(LogLine(f"Timed out waiting for {elem} to load. Elapsed time: ", elapsedTime))
         else:
             if not supressError:
-                print("Error: browser service is not initialized")
+                self.logger.error("Browser service is not initialized")
 
         return matchingElement
             
@@ -295,7 +300,7 @@ class WebScraper:
                     matchingElements = self.browser.find_elements(byType, elem)
                 except Exception as e:
                     if not suppressError:
-                        print(f"Error: unexpected exception while getting {elem}: ", e)
+                        self.logger.error(LogLine(f"Unexpected exception while getting {elem}: ", e))
                     break
 
                 # Give more time for elements to load
@@ -314,10 +319,10 @@ class WebScraper:
                 
             if matchingElements is None and elapsedTime >= timeout:
                 if not suppressError:
-                    print(f"Error: timed out waiting for {elem} to load. Elapsed time: ", elapsedTime)
+                    self.logger.error(LogLine(f"Timed out waiting for {elem} to load. Elapsed time: ", elapsedTime))
         else:
             if not supressError:
-                print("Error: browser service is not initialized")
+                self.logger.error("Browser service is not initialized")
 
         return matchingElements
 
@@ -351,7 +356,7 @@ class WebScraper:
                 # Get potentailly new elements
                 matchingElements = self.getElementsByXPath(xpathScrollable, timeout, suppressError)
             else:
-                print("Error: matched 0 scrollable div elements.")
+                self.logger.error("Matched 0 scrollable div elements.")
                 break
 
             # If scrolling reveals more elements keep iterating
@@ -372,13 +377,12 @@ class WebScraper:
             if self.browser is not None:
                 match = self.getElement(elem, byType)
                 setAttrScript = f"arguments[0].setAttribute('{attribute}', '{value}')"
-                print("Script: ", setAttrScript)
                 self.executeScriptOnElement(elem, "", timeout)
                 result=True
             else:
-                print("Error: browser service is not initialized")
+                self.logger.error("Browser service is not initialized")
         except:
-            print(f"Error: unable to access {elem}. Can't find the field by {byType}.")
+            self.logger.error(f"Unable to access {elem}. Can't find the field by {byType}.")
 
         return result
     
@@ -397,9 +401,9 @@ class WebScraper:
                     match.send_keys(Keys.RETURN)
                 result=True
             else:
-                print("Error: browser service is not initialized")
+                self.logger.error("Browser service is not initialized")
         except:
-            print(f"Error: unable to access {elem}. Can't find the field by {byType}.")
+            self.logger.error(f"Unable to access {elem}. Can't find the field by {byType}.")
 
         return result
 
@@ -429,9 +433,9 @@ class WebScraper:
                     elapsedTime = time.time() - startTime
                 
         if not result:
-            print(f"Error: unable to click on element: {elem}")
+            self.logger.error(f"Unable to click on element: {elem}")
             if lastException is not None:
-                print(lastException)
+                self.logger.error(LogLine(lastException))
             
         return result
 
@@ -454,9 +458,9 @@ class WebScraper:
                 elapsedTime = time.time() - startTime
 
         if not executed:
-            print(f"Error: unable to execute {script} on {element}") 
+            self.logger.error(f"Unable to execute {script} on {element}") 
             if lastException is not None:
-                print(lastException)
+                self.logger.error(LogLine(lastException))
 
         return result
 
