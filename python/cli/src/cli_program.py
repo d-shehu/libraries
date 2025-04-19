@@ -3,6 +3,7 @@ from enum import Enum
 import inspect
 import os
 import shlex
+import sys
 from typing import get_type_hints
 
 # Local package
@@ -40,16 +41,16 @@ class CLICommand:
             raise Exception("Unable to derive argParser args from function signature: ", e)
 
     def __addArgument(self, name, argKind, argType, defaultVal):
+        action  = None
         
-        choices = None
         # Fallback to string if type not specified
         if argType == inspect._empty:
             argType = str
         # Convert enum options to choices but the type becomes string in parser
         elif isinstance(argType, type(Enum)):
-            choices = [elem.value for elem in argType] 
+            action = CreateEnumAction(argType)
             argType = str
-
+            
         # If there's no default value it's required by the python function.
         isRequired = False
         if defaultVal == inspect._empty:
@@ -58,7 +59,7 @@ class CLICommand:
             
         # Support only positional or variable. Python enforces ordering so variable args are at the end.
         if argKind == inspect.Parameter.POSITIONAL_OR_KEYWORD:
-            self.parser.add_argument(name, type=argType, choices = choices, default = defaultVal)
+            self.parser.add_argument(name, type = argType, action = action, default = defaultVal)
         elif argKind == inspect.Parameter.VAR_POSITIONAL:
             # Either requires at least one or value or otherwise it can be empty and returns default.
             nargsVal = "+" if isRequired else "*" 
@@ -87,7 +88,27 @@ class CLICommand:
             # Invoke the function with the param list
             self.funHandler(*paramList)
         except Exception as e:
-            raise Exception("Unable to invoke handler due to: ", e)
+            raise Exception(f"Unable to invoke handler due to: {e}")
+
+def CreateEnumAction(enumClass):
+    class EnumAction(argparse.Action):
+        def __init__(self, option_strings, dest, nargs=None, **kwargs):
+            if nargs is not None:
+                raise ValueError("nargs not allowed")
+            
+            kwargs["choices"] = [elem.value for elem in enumClass]
+            super().__init__(option_strings, dest, **kwargs)
+            
+        def __call__(self, parser, namespace, values, option_string=None):
+            print(f"EnumAction: {parser}, {namespace}, {values}, {option_string}")
+            converted = None
+            if isinstance(values, str):
+                converted = enumClass(values)
+            else:
+                converted = [enumClass(value) for value in values]
+            setattr(namespace, self.dest, converted)
+
+    return EnumAction
 
 class CLIProgram:
     def __init__(self):
@@ -141,11 +162,28 @@ class CLIProgram:
         return success
             
     def runInteractive(self):
+        # Disable built-in behavior of argparser in interactive mode
+        # and handle errors explicitly.
+        self.argParser.setBuiltInErrorHandling(False)
+        
         while not self.isDone:
-            userInput = input("Enter command: ")
-            parsedArgs = self.argParser.parse_args(shlex.split(userInput))
-            self.logger.debug(f"Cmd: {parsedArgs}")
-            self.cmdHandlers[parsedArgs.command].invoke(parsedArgs)
+            parsedArgs = None
+            try:
+                userInput = input("Enter command: ")
+            except KeyboardInterrupt as e:
+                sys.exit(os.EX_USAGE)
+                
+            try:
+                parsedArgs = self.argParser.parse_args(shlex.split(userInput))
+                self.logger.debug(f"Cmd: {parsedArgs}")    
+            except Exception as e:
+                self.logger.error(e)
+
+            if parsedArgs is not None and parsedArgs.command is not None:
+                try:
+                    self.cmdHandlers[parsedArgs.command].invoke(parsedArgs)
+                except KeyboardInterrupt as e:
+                    sys.exit(os.EX_USAGE)
 
     def runBatch(self):
         raise Exception("CLIProgram's 'runBatch' method must be defined in child class for batch mode.")
