@@ -48,6 +48,9 @@ class WebScraper(user_module.UserModule):
         else:
             self.logger.warning("Nothing to cleanup as browser not initialized!")
 
+    def hasBrowser(self):
+        return self.browser is not None
+        
     def setTimeout(self, timeout):
         self.timeout = timeout
 

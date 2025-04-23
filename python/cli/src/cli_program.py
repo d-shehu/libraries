@@ -7,7 +7,8 @@ import sys
 from typing import get_type_hints
 
 # Local package
-from .cli_context import *
+from .cli_context      import *
+from .cli_argparser    import *
 
 # Encapsulate interactive command
 class CLICommand:
@@ -50,20 +51,30 @@ class CLICommand:
         elif isinstance(argType, type(Enum)):
             action = CreateEnumAction(argType)
             argType = str
-            
+
+        params = {
+            "type":    argType,
+            "action":  action,
+            "default": None
+        }
+        
         # If there's no default value it's required by the python function.
         isRequired = False
-        if defaultVal == inspect._empty:
+        if defaultVal != inspect._empty:
+            name = "--" + name
+            params["default"] = defaultVal
+            params["required"] = isRequired
+        else:
             isRequired = True
-            defaultVal = None
             
-        # Support only positional or variable. Python enforces ordering so variable args are at the end.
-        if argKind == inspect.Parameter.POSITIONAL_OR_KEYWORD:
-            self.parser.add_argument(name, type = argType, action = action, default = defaultVal)
-        elif argKind == inspect.Parameter.VAR_POSITIONAL:
+        if argKind == inspect.Parameter.VAR_POSITIONAL:
             # Either requires at least one or value or otherwise it can be empty and returns default.
             nargsVal = "+" if isRequired else "*" 
-            self.parser.add_argument(name, type=argType, nargs = nargsVal, default = defaultVal)
+            params["nargs"] = nargsVal
+            
+        # Support only positional or variable. Python enforces ordering so variable args are at the end.
+        if (argKind == inspect.Parameter.POSITIONAL_OR_KEYWORD or argKind == inspect.Parameter.VAR_POSITIONAL):
+            self.parser.add_argument(name, **params)
         else:
             raise Exception(f"Only positional/keyword or variable arguments supported: {argKind}")
 
@@ -72,6 +83,8 @@ class CLICommand:
         return self.parser
 
     def invoke(self, parsedArgs):
+        success = False
+        
         try:
             funSignature = inspect.signature(self.funHandler)
             # For each parameter
@@ -86,9 +99,11 @@ class CLICommand:
                     paramList.append(argValue)
 
             # Invoke the function with the param list
-            self.funHandler(*paramList)
+            success = self.funHandler(*paramList)
         except Exception as e:
             raise Exception(f"Unable to invoke handler due to: {e}")
+
+        return success
 
 def CreateEnumAction(enumClass):
     class EnumAction(argparse.Action):
@@ -100,7 +115,6 @@ def CreateEnumAction(enumClass):
             super().__init__(option_strings, dest, **kwargs)
             
         def __call__(self, parser, namespace, values, option_string=None):
-            print(f"EnumAction: {parser}, {namespace}, {values}, {option_string}")
             converted = None
             if isinstance(values, str):
                 converted = enumClass(values)
@@ -124,16 +138,36 @@ class CLIProgram:
         self.context     = context
         self.logger      = logger
 
-        # Declare handlers. This can be overriden in subclass.
-        self.defineHandlers()
+        # Further initialization based on configs
+        if self.doConfigure():
+            # Declare handlers. This can be overriden in subclass.
+            self.defineHandlers()
+            return True
+        else:
+            return False
 
-    # Handlers built-in
+    def doConfigure(self) -> bool:
+        self.logger.warning("Recommend overriding doConfigure to further initialize your program based on given context.")
+        return True
+        
+    # Handlers for built-in functionality
     def defineHandlers(self):
         self.cmdHandlers = {
             "help":  CLICommand(self.cmdParser, "help",  self.handleHelp,  "Print usage information."),
-            "usage": CLICommand(self.cmdParser, "usage", self.handleUsage, "Print help information."),
-            "quit":  CLICommand(self.cmdParser, "quit",  self.handleQuit,  "Exit from interactive mode.")
+            "usage": CLICommand(self.cmdParser, "usage", self.handleUsage, "Print help information.")
         }
+
+        if self.context.mode == CLIProgramMode.Interactive:
+            self.addHandler(
+                CLICommand(self.cmdParser, "quit",  self.handleQuit,  "Exit from interactive mode.")
+            )
+
+        # Install interactive handlers
+        self.defineCustomHandlers()
+
+    # To be overriden by child program class
+    def defineCustomHandlers(self):
+        raise Exception("CLIProgram's 'defineCustomHandlers' function must be overriden in child class.")
     
     # Dynamically add handler for commands in interactive mode
     def addHandler(self, cliCommand):
@@ -162,37 +196,63 @@ class CLIProgram:
         return success
             
     def runInteractive(self):
-        # Disable built-in behavior of argparser in interactive mode
-        # and handle errors explicitly.
-        self.argParser.setBuiltInErrorHandling(False)
+        exitCode = os.EX_OK
         
-        while not self.isDone:
+        while not self.isDone and exitCode == os.EX_OK:
             parsedArgs = None
+            
             try:
                 userInput = input("Enter command: ")
-            except KeyboardInterrupt as e:
-                sys.exit(os.EX_USAGE)
+                parsedArgs = self.argParser.parse_args(shlex.split(userInput)) 
                 
-            try:
-                parsedArgs = self.argParser.parse_args(shlex.split(userInput))
-                self.logger.debug(f"Cmd: {parsedArgs}")    
-            except Exception as e:
+                # Keep running until user exits
+                if self.runCommand(parsedArgs) != os.EX_OK and parsedArgs is not None:
+                    self.logger.debug(f"Failed to run command: {parsedArgs}")
+                    self.argParser
+            # Intercept but don't exit for malformed arguments in interactive mode
+            except (argparse.ArgumentError, CLIAppArgumentError, CLIAppParserExit) as e:
                 self.logger.error(e)
+                self.logger.error(f"Enter <command> -h for the specific interactive command.") 
+            # Intercept ctlr-c so user can exit without triggering exception
+            except KeyboardInterrupt as e:
+                exitCode = os.EX_USAGE
+            # Intercept all other exceptions and set flag to generic "usage" error
+            except Exception as e:
+                self.logger.exception(e)
+                exitCode = os.EX_USAGE
 
-            if parsedArgs is not None and parsedArgs.command is not None:
-                try:
-                    self.cmdHandlers[parsedArgs.command].invoke(parsedArgs)
-                except KeyboardInterrupt as e:
-                    sys.exit(os.EX_USAGE)
+        return exitCode
 
-    def runBatch(self):
-        raise Exception("CLIProgram's 'runBatch' method must be defined in child class for batch mode.")
+    def runCommand(self, parsedArgs):
+        exitCode = os.EX_USAGE
 
-    def handleHelp(self):
+        if parsedArgs is not None and getattr(parsedArgs, "command", None) is not None:
+            try:
+                if self.cmdHandlers[parsedArgs.command].invoke(parsedArgs):
+                    exitCode = os.EX_OK
+                else:
+                    exitCode = os.EX_SOFTWARE
+            except Exception as e:
+                self.logger.exception(f"Unable to run '{parsedArgs.command}' with parameters '{parsedArgs}':")
+                exitCode = os.EX_SOFTWARE
+        # If no command specify explicitly print usage.
+        elif getattr(parsedArgs, "command", None) is None:
+            self.argParser.print_usage()
+
+        return exitCode
+                
+    def runService(self):
+        self.logger.error("CLIProgram's 'runService' method must be defined in child class for batch mode.")
+        return os.EX_UNAVAILABLE
+
+    def handleHelp(self) -> bool:
         self.argParser.print_help()
+        return True
         
-    def handleUsage(self):
+    def handleUsage(self) -> bool:
         self.argParser.print_usage()
+        return True
         
-    def handleQuit(self):
+    def handleQuit(self) -> bool:
         self.isDone = True
+        return True

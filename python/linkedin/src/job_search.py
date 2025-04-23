@@ -118,8 +118,8 @@ class JobSearch(user_module.UserModule):
 
         return dfCurrJobs
 
-    def persistResults(self, spreadsheetURL, sheetLabel, dfJobs):
-        serializer = Serializer(spreadsheetURL, sheetLabel, self.logger)
+    def persistResults(self, gsheetSecretsFile, spreadsheetURL, sheetLabel, dfJobs):
+        serializer = Serializer(gsheetSecretsFile, spreadsheetURL, sheetLabel, self.logger)
         return serializer.updateWorksheet(dfJobs)
 
     def getRecommendations(self, maxPages):

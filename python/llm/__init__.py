@@ -1,9 +1,8 @@
 import os
-import subprocess
-import sys
 
-packagePath = os.path.abspath(os.path.dirname(__file__))
-subprocess.check_call([sys.executable, "-m", "pip", "install", "-qr", 
-                        os.path.join(packagePath, "requirements.txt")])
+# Local packages
+from core import install
+
+install.InstallDependencies(os.path.abspath(os.path.dirname(__file__)))
 
 from .src import llm_manager

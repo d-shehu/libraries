@@ -4,11 +4,11 @@ import importlib.util
 import os
 from pathlib import Path
 import pkgutil
-import subprocess
 import sys
 from types import ModuleType
 
-from .logs import *
+from .logs    import *
+from .install import *
 
 # Assume user module reside under the packages directory as shown here:
 # ... / <packages> / <package_1> / <src> / module
@@ -148,14 +148,6 @@ class ReloadAction(Action):
     def _doAction(self, userModule):
         userModule.getLogger().debug(LogLine("Reload: ", userModule.getModule()))
         reload(userModule.getModule())
-
-def InstallDependencies(path, logger):
-    logger.debug(f"Installing dependencies from {path} ...")
-    requirementsPath = Path(f"{path}/requirements.txt")
-    if requirementsPath.is_file():
-        subprocess.check_call([sys.executable, "-m", "pip", "install", "-qr", requirementsPath])
-    else:
-        logger.warning(f"Requirements file missing from: {path}") 
 
 def LoadFromFile(moduleName, package, libPath = ".", doInstall = True, doReload =  False, projectDir = "."):
     

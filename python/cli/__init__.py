@@ -1,11 +1,12 @@
 import os
-import subprocess
-import sys
 
-packagePath = os.path.abspath(os.path.dirname(__file__))
-subprocess.check_call([sys.executable, "-m", "pip", "install", "-qr", 
-                        os.path.join(packagePath, "requirements.txt")])
-    
+# Local packages
+from core import install
+
+install.InstallDependencies(os.path.abspath(os.path.dirname(__file__)))
+
+# This package's source
 from .src import cli_app
 from .src import cli_program
+from .src import cli_program_mode
 
