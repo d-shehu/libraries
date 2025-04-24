@@ -35,7 +35,8 @@ class WebScraper(user_module.UserModule):
                  timeout = DEFAULT_TIMEOUT_SECS, 
                  sleep = DEFAULT_SLEEP_SECS, 
                  logMgr = logs.ConfigureConsoleOnlyLogging("WebScraperLogger")):
-        super().__init__(sys.modules[__name__], logMgr)
+        super().__init__(logMgr)
+        
         # Firefox seems to work better so defaulting to it.
         self.width           = width
         self.height          = height

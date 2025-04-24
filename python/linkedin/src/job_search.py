@@ -25,7 +25,7 @@ class JobSearch(user_module.UserModule):
                  progressTracker = progress_tracker.ProgressTrackerCLI(), 
                  logMgr = logs.ConfigureConsoleOnlyLogging("JobSearchLogger")
                 ):
-        super().__init__(sys.modules[__name__], logMgr)
+        super().__init__(logMgr)
 
         self.scraper         = None
         self.authenticator   = None

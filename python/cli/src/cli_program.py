@@ -6,23 +6,26 @@ import shlex
 import sys
 from typing import get_type_hints
 
+# User packages
+from core import user_module
+
 # Local package
 from .cli_context      import *
 from .cli_argparser    import *
 
-class CLIProgram:
-    def __init__(self):
+class CLIProgram(user_module.UserModule):
+    def __init__(self, appLogMgr):
+        super().__init__(appLogMgr)
+
         self.isDone      = False
         self.cmdParser   = None
         self.cmdHandlers = {}
         self.context     = None
-        self.logger      = None
 
-    def initParser(self, argParser, context, logger):
+    def initParser(self, argParser, context):
         self.context     = context
         self.argParser   = argParser
         self.cmdParser   = self.argParser.add_subparsers(dest = "command", help = "Interactive command help") 
-        self.logger      = logger
 
         # Declare handlers. This can be overriden in subclass.
         self.defineHandlers()
@@ -30,9 +33,6 @@ class CLIProgram:
     def configure(self) -> bool:
         self.logger.warning("Recommend overriding configure to further initialize your program based on given context.")
         return True
-
-        # Further initialization based on configs
-        return self.doConfigure()
     
     # Handlers for built-in functionality
     def defineHandlers(self):
@@ -110,18 +110,23 @@ class CLIProgram:
     def runCommand(self, parsedArgs):
         exitCode = os.EX_USAGE
 
-        if parsedArgs is not None and getattr(parsedArgs, "command", None) is not None:
-            try:
-                if self.cmdHandlers[parsedArgs.command].invoke(parsedArgs):
-                    exitCode = os.EX_OK
-                else:
+        if parsedArgs is not None:
+            if getattr(parsedArgs, "command", None) is not None:
+                try:
+                    if self.cmdHandlers[parsedArgs.command].invoke(parsedArgs):
+                        exitCode = os.EX_OK
+                    else:
+                        exitCode = os.EX_SOFTWARE
+                except Exception as e:
+                    self.logger.exception(f"Unable to run '{parsedArgs.command}' with parameters '{parsedArgs}':")
                     exitCode = os.EX_SOFTWARE
-            except Exception as e:
-                self.logger.exception(f"Unable to run '{parsedArgs.command}' with parameters '{parsedArgs}':")
-                exitCode = os.EX_SOFTWARE
-        # If no command specify explicitly print usage.
-        elif getattr(parsedArgs, "command", None) is None:
+            # If no command specify explicitly print usage.
+            elif getattr(parsedArgs, "command", None) is None:
+                self.argParser.print_usage()
+        else:
+            self.logger.debug("Parsed argument is undefined.")
             self.argParser.print_usage()
+            
 
         return exitCode
                 

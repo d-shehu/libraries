@@ -5,5 +5,4 @@ from core import install
 
 install.InstallDependencies(os.path.abspath(os.path.dirname(__file__)))
 
-from .src import progress_tracker
-from .src import filters
+from .src import filters, progress_tracker

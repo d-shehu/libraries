@@ -1,3 +1,1 @@
-from .src import logs
-from .src import user_module
-from .src import install
+from .src import install, logs, user_module

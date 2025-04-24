@@ -16,7 +16,7 @@ class CLIApp(user_module.UserModule):
                  description,
                  version,
                  additionalInfo = ""):
-        super().__init__(sys.modules[__name__], logs.ConfigureConsoleOnlyLogging(appName + "_Logger"))
+        super().__init__(logs.ConfigureConsoleOnlyLogging(appName + "_Logger"))
         
         self.appName        = appName
         self.description    = description
@@ -71,7 +71,7 @@ class CLIApp(user_module.UserModule):
                                                                 action   = argparse.BooleanOptionalAction,
                                                                 help     = "Enable automatic install of all package dependencies.",
                                                                 default  = False)
-
+        
         # TODO: passthrough to underlying user logic
         self.argParser.add_argument(      "--verbose",          type      = bool, 
                                                                 action    = argparse.BooleanOptionalAction,
@@ -159,12 +159,17 @@ class CLIApp(user_module.UserModule):
             pgmParser = self.argParser 
             if self.getModeFromArgv() == CLIProgramMode.Interactive:
                 pgmParser = CLIAppArgParser("Enter command:")
-            program.initParser(pgmParser, self.context, self.logger)
+            program.initParser(pgmParser, self.context)
 
              # Parse env variables and configuration to successfully run program.
             parsedArgs = self.parseArguments()
+
+            # For convenience, intercept and write out requirements.txt for 
+            if parsedArgs.install_deps:
+                status = self.writeDeps(os.getcwd(), True, False) and program.writeDeps(os.getcwd(), True)
+
+            # Execute either as command, interactive program or (background) service
             if parsedArgs is not None and program.configure():
-                
                 try:
                     if self.context.mode == CLIProgramMode.Interactive:
                         self.logger.info(f"Running {self.appName} in interactive mode.")

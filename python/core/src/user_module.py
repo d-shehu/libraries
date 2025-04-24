@@ -13,16 +13,23 @@ from .install import *
 # Assume user module reside under the packages directory as shown here:
 # ... / <packages> / <package_1> / <src> / module
 class UserModule:
-    def __init__(self, module, logMgr = ConfigureConsoleOnlyLogging("UserModuleLogger"), projectDir = "."):
+    def __init__(self, 
+                 logMgr = ConfigureConsoleOnlyLogging("UserModuleLogger"), 
+                 module = None, 
+                 projectDir = "."
+                ):
+        self._module = module if not module is None else sys.modules[self.__class__.__module__]
+        self._packagePath = os.path.abspath(os.path.dirname(os.path.dirname(self.module.__file__)))
         self._logMgr = logMgr
-        self.module = module
-        self.packagePath = os.path.abspath(os.path.dirname(os.path.dirname(module.__file__)))
+
+        self.logger.debug(f"Module: {self._module}")
+        self.logger.debug(f"Package Path: {self._packagePath}")
 
         # Search only within user's project or otherwise derive package's parent directory
         if projectDir != ".":
-            self.projectDir = projectDir    
+            self._projectDir = os.path.abspath(projectDir)    
         else:
-            self.projectDir = os.path.abspath(os.path.dirname(self.packagePath))
+            self._projectDir = os.path.abspath(os.path.dirname(self.packagePath))
 
     @property
     def logMgr(self):
@@ -39,17 +46,21 @@ class UserModule:
     def logger(self):
         return self._logMgr.getSysLogger()
 
-    def getProjectDir(self):
-        return self.projectDir
+    @property
+    def projectDir(self):
+        return str(self._projectDir)
 
-    def setProjectDir(self, projectDir):
-        self.projectDir = projectDir
-    
-    def getModule(self):
-        return self.module
-        
-    def getPackagePath(self):
-        return self.packagePath
+    @projectDir.setter
+    def projectDir(self, projectDir):
+        self._projectDir = projectDir
+
+    @property
+    def module(self):
+        return self._module
+
+    @property
+    def packagePath(self):
+        return self._packagePath
 
     # Install dependencies of associated package and all other packages upon which this module is dependent.
     # Useful for debugging and testing.
@@ -62,20 +73,29 @@ class UserModule:
 
         return self
 
-    def writeDeps(self, outPath, recursive = True):
+    def writeDeps(self, outDir, recursive = True, append = True):
+        success = False
+        
         action = GetDepsAction()
         if recursive:
             self.iterateDeps(action)
         else:
             action(self)
 
-        lsRequirements = action.getRequirements()
+        requirementsFilepath = Path(outDir) / Path("requirements.txt")
         try:
-            with open(outPath, "w") as file:
+            if append:
+                action.readRequirements(requirementsFilepath)
+            self.logger.debug(f"Requirements for: {self.module}")
+            lsRequirements = action.getRequirements()
+            with open(requirementsFilepath, "w") as file:
                 for requirement in lsRequirements:
-                    file.write(requirement)
+                    file.write(requirement + "\n")
+            success = True
         except Exception as e:
             self.logger.exception(LogLine("Unable to write exception for ", self.module))
+
+        return success
 
     # Reload just this module or also all of it's dependencies recursively.
     # Inspiration: https://stackoverflow.com/questions/15506971/recursive-version-of-reload
@@ -92,9 +112,13 @@ class UserModule:
         q = deque() # Track of dependencies
         q.appendleft(self)
 
+        self.logger.debug(f"Project dir {self.projectDir}")
+        self.logger.debug(f"Iterating on action {action} for {self}")
+        
         while len(q) > 0:
             currUserModule = q.pop()
             currModule = currUserModule.module
+            self.logger.debug(f"Action {action} on {currModule}")
             action(currUserModule)
 
             # Recusrively get user packages that are reference by this module
@@ -105,11 +129,12 @@ class UserModule:
                     and hasattr(attribute, '__file__') 
                     and attribute.__file__ 
                    ):
-                    self.logger.debug(f"Dep Module: {attribute}") 
                     pathToModule = os.path.abspath(attribute.__file__)
                     if pathToModule.startswith(self.projectDir):
+                        self.logger.debug(f"Dep Module: {attribute} at {pathToModule}") 
+                        self.logger.debug(f"Project dir {self.projectDir}")
                         # Qualifies as a user module on which to action
-                        q.appendleft(UserModule(module = attribute, projectDir = self.projectDir))
+                        q.appendleft(UserModule(self.logMgr, module = attribute, projectDir = self.projectDir))
 
 
 class Action:
@@ -118,7 +143,7 @@ class Action:
         self.actionSet = set() 
         
     def __call__(self, userModule):
-        userModuleFile = os.path.abspath(userModule.getModule().__file__)
+        userModuleFile = os.path.abspath(userModule.module.__file__)
         if not userModuleFile in self.actionSet:
             self.actionSet.add(userModuleFile)
             self._doAction(userModule)
@@ -128,17 +153,26 @@ class Action:
     def _doAction(self):
         raise Exception("Implement Action's _doAction() in child class")
         
-class InstallDepsAction(Action):        
+class InstallDepsAction(Action):
+    def __init__(self):
+        super().__init__()
+        
     def _doAction(self, userModule):
-        path = userModule.getPackagePath()
+        path = userModule.packagePath
         InstallDependencies(path, userModule.logger)
 
 class GetDepsAction(Action):
     def __init__(self):
-        lsRequirements = []
+        super().__init__()
+        self.lsRequirements = []
         
     def _doAction(self, userModule):
-        requirementsPath = Path(f"{path}/requirements.txt")
+        self.readRequirements(
+            Path(userModule.packagePath) / Path("requirements.txt")
+        )
+        
+
+    def readRequirements(self, requirementsPath):
         if requirementsPath.is_file():
             try:
                 with open(requirementsPath, "r") as file:
@@ -147,16 +181,27 @@ class GetDepsAction(Action):
                         
             except Exception as e:
                 userModule.logger.exception(f"Unable to read packages from requirements file: {requirementsPath}")
+        
 
-    def getRequirements():
+    # Remove duplicates, empty entries and sort
+    def cleanup(self):
+        self.lsRequirements = list(set(map(
+            lambda item: item.strip(), filter(lambda item: item != "", self.lsRequirements)
+        )))
         self.lsRequirements.sort()
+        
+    def getRequirements(self):
+        self.cleanup()
         return self.lsRequirements
         
         
 class ReloadAction(Action):
+    def __init__(self):
+        super().__init__()
+        
     def _doAction(self, userModule):
-        userModule.logger.debug(LogLine("Reload: ", userModule.getModule()))
-        reload(userModule.getModule())
+        userModule.logger.debug(f"Reload {userModule.module}")
+        reload(userModule.module)
 
 def LoadFromFile(moduleName, package, libPath = ".", doInstall = True, doReload =  False, projectDir = "."):
     
@@ -169,7 +214,7 @@ def LoadFromFile(moduleName, package, libPath = ".", doInstall = True, doReload 
     InstallDependencies(packagePath, logger)
     
     module = importlib.import_module("." + moduleName, package + ".src")    
-    userModule = UserModule(module, projectDir)
+    userModule = UserModule(logger, module, projectDir)
     
     # Simplify dev for local packages by reloading all modules and deps recursively
     if doInstall:
