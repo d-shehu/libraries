@@ -2,29 +2,26 @@ import os
 from pathlib import Path
 
 # User packages
-from core import logs, install
+from core import user_module, logs, install
 
 # Local package
 from .cli_context      import *
 from .cli_program      import *
+from .cli_program_mode import *
 from .cli_argparser    import *
 
-class CLIApp:
+class CLIApp(user_module.UserModule):
     def __init__(self, 
                  appName, 
                  description,
                  version,
                  additionalInfo = ""):
+        super().__init__(sys.modules[__name__], logs.ConfigureConsoleOnlyLogging(appName + "_Logger"))
         
         self.appName        = appName
         self.description    = description
         self.version        = version
         self.additionalInfo = additionalInfo
-
-        # If logs director not specified fall back to logging to console
-        self.logMgr = logs.ConfigureConsoleOnlyLogging(appName + "_Logger")
-        self.logger = self.logMgr.getSysLogger()
-
         self.context        = CLIContext(self.logger)
 
         self.argParser = argparse.ArgumentParser(prog          = self.appName,
@@ -41,7 +38,7 @@ class CLIApp:
         self.argParser.add_argument("-m", "--mode",             type     = str, 
                                                                 help     = "Run application in interactive mode with user input.",
                                                                 choices  = ["interactive", "command", "service"],
-                                                                required = True)
+                                                                default  = "command")
         
         self.argParser.add_argument("-e", "--environment-file", type     = ArgValidator.parseFilePath,
                                                                 help     = "Path to .env file.",
@@ -96,7 +93,6 @@ class CLIApp:
                 logsDir = args.log_dir
                 if logsDir != "":
                     self.logMgr = logs.ConfigureDefaultLogging(self.appName + "_Logger", args.log_dir)
-                    self.logger = self.logMgr.getSysLogger()
                 # Debugging flag?
                 self.isDebugMode = args.debug
                 if not self.isDebugMode:
@@ -114,7 +110,6 @@ class CLIApp:
                 self.logger.debug(f"Disable log level: {self.disableLoggingLevel}")
     
                 # Program mode
-                self.context.mode = CLIProgramMode(args.mode)
                 self.logger.debug(f"Mode: {self.context.mode}")
     
                 # Environment variables can come from either environment file or os.env
@@ -138,43 +133,63 @@ class CLIApp:
             args = None # Failed to parse arguments
 
         return args
+
+    # A bit of a chicken and the egg issue where interactive mode has to be known before the arguments are parsed
+    # to install the appropriate sub_parser.
+    def getModeFromArgv(self):
+        modes = [m.value for m in CLIProgramMode]
+        for index in range(0, len(sys.argv)-1):
+            curr = sys.argv[index].lower()
+            if curr == "-m" or curr == "--mode":
+                mode = sys.argv[index+1].lower()
+                if mode in modes:
+                    self.context.mode = CLIProgramMode(mode)
+
+        # Default to "command" mode
+        if self.context.mode == CLIProgramMode.Undefined:
+            self.context.mode = CLIProgramMode.Command
+            
+        return self.context.mode
      
     def run(self, program):
-        exitCode = os.EX_OK    
+        exitCode = os.EX_USAGE    
 
-        # If parsing of env variables and configuration successfully run program.
-        parsedArgs = self.parseArguments()
-        # If running in interactive mode create a new parser
-        pgmParser = self.argParser if self.context.mode != CLIProgramMode.Interactive else CLIAppArgParser("Enter command:")
-        
-        if (parsedArgs is not None
-            and program is not None
-            and program.configure(pgmParser, self.context, self.logger)
-           ):
-            
-            try:
-                if self.context.mode == CLIProgramMode.Interactive:
-                    self.logger.info(f"Running {self.appName} in interactive mode.")
-                    exitCode = program.runInteractive()
-                elif self.context.mode == CLIProgramMode.Service:
-                    self.logger.info(f"Running {self.appName} as a service.")
-                    exitCode = program.runService()
-                elif self.context.mode == CLIProgramMode.Command:
-                    self.logger.info(f"Executing a {self.appName} command.")
-                    exitCode = program.runCommand(parsedArgs)
-                else:
-                    self.logger.error(f"Unknown program mode: {self.context.mode}")
-                    exitCode = os.EX_USAGE
-            except Exception as e:
-                self.logger.exception("Exception encountered while running program.")
-                exitCode = os.EX_SOFTWARE
+        if program is not None:
+            # If running in interactive mode create a new parser
+            pgmParser = self.argParser 
+            if self.getModeFromArgv() == CLIProgramMode.Interactive:
+                pgmParser = CLIAppArgParser("Enter command:")
+            program.initParser(pgmParser, self.context, self.logger)
+
+             # Parse env variables and configuration to successfully run program.
+            parsedArgs = self.parseArguments()
+            if parsedArgs is not None and program.configure():
                 
-        elif program is None:
-            self.logger.error("Must pass in a valid program to CLIApp's 'run'.") 
-            exitCode = os.EX_SOFTWARE
+                try:
+                    if self.context.mode == CLIProgramMode.Interactive:
+                        self.logger.info(f"Running {self.appName} in interactive mode.")
+                        exitCode = program.runInteractive()
+                    elif self.context.mode == CLIProgramMode.Service:
+                        self.logger.info(f"Running {self.appName} as a service.")
+                        exitCode = program.runService()
+                    elif self.context.mode == CLIProgramMode.Command:
+                        self.logger.info(f"Executing a {self.appName} command.")
+                        exitCode = program.runCommand(parsedArgs)
+                    else:
+                        self.logger.error(f"Unknown program mode: {self.context.mode}")
+                        exitCode = os.EX_USAGE
+                except Exception as e:
+                    self.logger.exception("Exception encountered while running program.")
+                    exitCode = os.EX_SOFTWARE
+                
+            elif program is None:
+                self.logger.error("Must pass in a valid program to CLIApp's 'run'.") 
+                exitCode = os.EX_SOFTWARE
+            else:
+                self.logger.error("CLIApp not able to parse arguments and/or configure the program.") 
+                exitCode = os.EX_USAGE
         else:
-            self.logger.error("CLIApp not able to parse arguments and/or configure the program.") 
-            exitCode = os.EX_USAGE
+            self.logger.error("CLIApp must be given a valid program to run.")
 
         sys.exit(exitCode)
 

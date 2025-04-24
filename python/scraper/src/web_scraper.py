@@ -31,8 +31,11 @@ DEFAULT_TIMEOUT_SECS  = 5     # How long to wait before erroring out.
 DEFAULT_SLEEP_SECS    = .250  # Balance between waiting too long to see if element has reloaded and thrashing CPU.
 
 class WebScraper(user_module.UserModule):    
-    def __init__(self, width = 1920, height = 1080, timeout = DEFAULT_TIMEOUT_SECS, sleep = DEFAULT_SLEEP_SECS):
-        super().__init__(sys.modules[__name__])
+    def __init__(self, width = 1920, height = 1080, 
+                 timeout = DEFAULT_TIMEOUT_SECS, 
+                 sleep = DEFAULT_SLEEP_SECS, 
+                 logMgr = logs.ConfigureConsoleOnlyLogging("WebScraperLogger")):
+        super().__init__(sys.modules[__name__], logMgr)
         # Firefox seems to work better so defaulting to it.
         self.width           = width
         self.height          = height

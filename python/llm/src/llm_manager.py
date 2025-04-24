@@ -388,8 +388,10 @@ class OllamaModel(LLMModel):
         return response
         
 class LLMManager(user_module.UserModule):
-    def __init__(self, clientType, info, tag = "", verboseOutput = False):
-        super().__init__(sys.modules[__name__])
+    def __init__(self, clientType, info, tag = "", verboseOutput = False, 
+                 logMgr = logs.ConfigureConsoleOnlyLogging("LLMManagerLogger")
+                ):
+        super().__init__(sys.modules[__name__], logMgr)
         
         self.clientType    = clientType
         self.verboseOutput = verboseOutput

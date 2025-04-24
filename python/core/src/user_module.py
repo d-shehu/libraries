@@ -13,8 +13,8 @@ from .install import *
 # Assume user module reside under the packages directory as shown here:
 # ... / <packages> / <package_1> / <src> / module
 class UserModule:
-    def __init__(self, module, projectDir = "."):
-        self.logger = ConfigureConsoleOnlyLogging("UserModuleLogger").getSysLogger()
+    def __init__(self, module, logMgr = ConfigureConsoleOnlyLogging("UserModuleLogger"), projectDir = "."):
+        self._logMgr = logMgr
         self.module = module
         self.packagePath = os.path.abspath(os.path.dirname(os.path.dirname(module.__file__)))
 
@@ -23,12 +23,21 @@ class UserModule:
             self.projectDir = projectDir    
         else:
             self.projectDir = os.path.abspath(os.path.dirname(self.packagePath))
-    
-    def getLogger(self):
-        return self.logger
 
-    def setLogger(self, logger):
-        self.logger = logger
+    @property
+    def logMgr(self):
+        return self._logMgr
+
+    # Logmgr can be overriden after initial initialization but not recommended as it can
+    # break up logs.
+    @logMgr.setter
+    def logMgr(self, logMgr):
+        self._logMgr = logMgr
+    
+    # Logger should be read only as only the logmgr can be modified.
+    @property
+    def logger(self):
+        return self._logMgr.getSysLogger()
 
     def getProjectDir(self):
         return self.projectDir
@@ -114,7 +123,7 @@ class Action:
             self.actionSet.add(userModuleFile)
             self._doAction(userModule)
         else:
-            userModule.getLogger().debug(f"Action already run on {userModuleFile}")
+            userModule.logger.debug(f"Action already run on {userModuleFile}")
 
     def _doAction(self):
         raise Exception("Implement Action's _doAction() in child class")
@@ -122,7 +131,7 @@ class Action:
 class InstallDepsAction(Action):        
     def _doAction(self, userModule):
         path = userModule.getPackagePath()
-        InstallDependencies(path, userModule.getLogger())
+        InstallDependencies(path, userModule.logger)
 
 class GetDepsAction(Action):
     def __init__(self):
@@ -137,7 +146,7 @@ class GetDepsAction(Action):
                         self.lsRequirements.append(line)
                         
             except Exception as e:
-                userModule.getLogger().exception(f"Unable to read packages from requirements file: {requirementsPath}")
+                userModule.logger.exception(f"Unable to read packages from requirements file: {requirementsPath}")
 
     def getRequirements():
         self.lsRequirements.sort()
@@ -146,7 +155,7 @@ class GetDepsAction(Action):
         
 class ReloadAction(Action):
     def _doAction(self, userModule):
-        userModule.getLogger().debug(LogLine("Reload: ", userModule.getModule()))
+        userModule.logger.debug(LogLine("Reload: ", userModule.getModule()))
         reload(userModule.getModule())
 
 def LoadFromFile(moduleName, package, libPath = ".", doInstall = True, doReload =  False, projectDir = "."):

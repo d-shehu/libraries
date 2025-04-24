@@ -21,8 +21,11 @@ from .queries import *
 from .utilities import *
 
 class JobSearch(user_module.UserModule):
-    def __init__(self, progressTracker = progress_tracker.ProgressTrackerCLI()):
-        super().__init__(sys.modules[__name__])
+    def __init__(self, 
+                 progressTracker = progress_tracker.ProgressTrackerCLI(), 
+                 logMgr = logs.ConfigureConsoleOnlyLogging("JobSearchLogger")
+                ):
+        super().__init__(sys.modules[__name__], logMgr)
 
         self.scraper         = None
         self.authenticator   = None
@@ -42,9 +45,8 @@ class JobSearch(user_module.UserModule):
         if self.scraper is not None:
             del self.scraper
             
-        self.scraper       = web_scraper.WebScraper() # Instantiate new scraper object
+        self.scraper       = web_scraper.WebScraper(logMgr = self.logMgr) # Instantiate new scraper object
         self.authenticator = Authenticator(self.scraper, self.logger) # Since browser is reset we can reset authenticator
-        self.scraper.setLogger(self.logger) # Use the same logger as JobSearch to avoid fragmenting logs.
 
         return (self.scraper is not None)
 
