@@ -9,6 +9,7 @@ from .cli_context      import *
 from .cli_program      import *
 from .cli_program_mode import *
 from .cli_argparser    import *
+from .cli_utilities    import *
 
 class CLIApp(user_module.UserModule):
     def __init__(self, 
@@ -65,6 +66,15 @@ class CLIApp(user_module.UserModule):
         self.argParser.add_argument(      "--secrets-file",     type     = ArgValidator.parseFilePath,
                                                                 help     = "Path to secrets file with API keys, passwords, etc.",
                                                                 default  = "")
+
+        self.argParser.add_argument(      "--set",              nargs    = 3,
+                                                                metavar  = ("TYPE", "KEY", "VALUE"),
+                                                                action   = "append",
+                                                                help     = """Set env variable or secret as a key-value pair. 
+                                                                            Example: --set param param1 10
+                                                                                     --set secret username myusername
+                                                                            """)
+                
 
         # For debugging, enable automatic install of all packages
         self.argParser.add_argument(install.InstallFlag,        type     = bool, 
@@ -123,6 +133,19 @@ class CLIApp(user_module.UserModule):
                 if self.secretsFilepath != "":
                     self.context.configureSecrets(os.path.expanduser(self.secretsFilepath))
                 self.logger.debug(f"Secrets filepath: {self.secretsFilepath}")
+
+                # Env file and secrets can be overriden by params
+                # For now triggering an exception to avoid careless error
+                if args.set:
+                    for entry in args.set:
+                        kind, key, value = entry
+                        if kind == "param":
+                            self.context.setEnvVariable(key, value)
+                        elif kind == "secret":
+                            self.context.setSecret(key, value)
+                        else:
+                            raise Exception(f"Can't set key-value pair as '{kind}' is unknown.")
+                            
     
                 # Verbose enable
                 self.context.isVerboseMode = args.verbose
@@ -165,7 +188,7 @@ class CLIApp(user_module.UserModule):
             parsedArgs = self.parseArguments()
 
             # For convenience, intercept and write out requirements.txt for 
-            if parsedArgs.install_deps:
+            if parsedArgs is not None and parsedArgs.install_deps:
                 status = self.writeDeps(os.getcwd(), True, False) and program.writeDeps(os.getcwd(), True)
 
             # Execute either as command, interactive program or (background) service
@@ -200,14 +223,14 @@ class CLIApp(user_module.UserModule):
 
 class ArgValidator:
     def parseDirPath(path):
-        if path == "" or Path(path).is_dir():
+        if path == "" or Path(GetFullPath(path)).is_dir():
             return path
         else:
             raise NotADirectoryError(path)
                 
 
     def parseFilePath(path):
-        if path == "" or Path(path).is_file():
+        if path == "" or Path(GetFullPath(path)).is_file():
             return path
         else:
             raise FileNotFoundError(path)

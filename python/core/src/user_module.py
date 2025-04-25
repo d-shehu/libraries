@@ -23,7 +23,6 @@ class UserModule:
         self._logMgr = logMgr
 
         self.logger.debug(f"Module: {self._module}")
-        self.logger.debug(f"Package Path: {self._packagePath}")
 
         # Search only within user's project or otherwise derive package's parent directory
         if projectDir != ".":
@@ -111,14 +110,10 @@ class UserModule:
     def iterateDeps(self, action):
         q = deque() # Track of dependencies
         q.appendleft(self)
-
-        self.logger.debug(f"Project dir {self.projectDir}")
-        self.logger.debug(f"Iterating on action {action} for {self}")
         
         while len(q) > 0:
             currUserModule = q.pop()
             currModule = currUserModule.module
-            self.logger.debug(f"Action {action} on {currModule}")
             action(currUserModule)
 
             # Recusrively get user packages that are reference by this module
@@ -131,8 +126,6 @@ class UserModule:
                    ):
                     pathToModule = os.path.abspath(attribute.__file__)
                     if pathToModule.startswith(self.projectDir):
-                        self.logger.debug(f"Dep Module: {attribute} at {pathToModule}") 
-                        self.logger.debug(f"Project dir {self.projectDir}")
                         # Qualifies as a user module on which to action
                         q.appendleft(UserModule(self.logMgr, module = attribute, projectDir = self.projectDir))
 

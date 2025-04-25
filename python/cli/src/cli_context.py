@@ -1,8 +1,10 @@
+import collections
 import os
 
 from dotenv import dotenv_values
 
 from .cli_program_mode import *
+from .cli_utilities    import *
 
 class CLIContext:
     def __init__(self, logger):
@@ -14,10 +16,12 @@ class CLIContext:
         self.logger        = logger
         
     def configureEnvVariables(self, path):
-        self.envVariables = dotenv_values(path)
+        self.logger.debug("Env Path: " + GetFullPath(path))
+        self.envVariables = dotenv_values(GetFullPath(path))
 
     def configureSecrets(self, path):
-        self.secrets = dotenv_values(path)
+        self.logger.debug("Secrets Path: " + GetFullPath(path))
+        self.secrets = dotenv_values(GetFullPath(path))
 
     def setLookInOSEnv(self, enabled):
         self.lookInOSEnv = enabled
@@ -43,6 +47,11 @@ class CLIContext:
 
         return value
 
+    def setEnvVariable(self, key, value, warnIfSet = True):
+        if key in self.envVariables and warnIfSet:
+            self.logger.warning(f"{key} param already set.")
+        self.envVariables[key] = value
+
     def getSecret(self, key):
         value =  None
 
@@ -50,3 +59,28 @@ class CLIContext:
             value = self.secrets[key]
 
         return value
+
+    def setSecret(self, key, value, warnIfSet = True):
+        if key in self.secrets and warnIfSet:
+            self.logger.warning(f"{key} secret already set.")
+        self.secrets[key] = value
+
+    # TODO: caution as this returns all secrets to caller
+    # A proper security model would restrict secrets base
+    # on roles, etc.
+    def getReadOnlySecrets(self):
+        return 
+
+class ROSecrets(collections.abc.Mapping):
+
+    def __init__(self, data):
+        self.__data = data
+
+    def __getitem__(self, key): 
+        return self.__data[key]
+
+    def __len__(self):
+        return len(self.__data)
+
+    def __iter__(self):
+        return iter(self.__data)
