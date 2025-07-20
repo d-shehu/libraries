@@ -10,6 +10,7 @@ from .cli_program      import *
 from .cli_program_mode import *
 from .cli_argparser    import *
 from .cli_utilities    import *
+from .cli_debug        import *
 
 class CLIApp(user_module.UserModule):
     def __init__(self, 
@@ -103,10 +104,10 @@ class CLIApp(user_module.UserModule):
                 logsDir = args.log_dir
                 if logsDir != "":
                     self.logMgr = logs.ConfigureDefaultLogging(self.appName + "_Logger", args.log_dir)
-                # Debugging flag?
+                # Debugging flag
                 self.isDebugMode = args.debug
                 if not self.isDebugMode:
-                    self.logMgr.suppressLogger("DEBUG") # Disable logging
+                    self.logMgr.suppressLogger("DEBUG") # Disable logging    
 
                 # Start logging after we've initialized
                 self.logger.debug(f"Sys args: {sys.argv}")
@@ -127,6 +128,13 @@ class CLIApp(user_module.UserModule):
                 if self.envFilepath != "":
                     self.context.configureEnvVariables(os.path.expanduser(self.envFilepath))
                 self.logger.debug(f"Env filepath: {self.envFilepath}")
+
+                # Configure debugging if enabled with given env
+                # Assume debugpy is installed
+                self.logger.info(f"Debugging: {self.isDebugMode}")
+                if self.isDebugMode:
+                    self.debugger = CLIDebugger(self.logger, self.context)
+                    self.debugger.start()
     
                 # Secrets which also utilizes .env format
                 self.secretsFilepath = args.secrets_file
