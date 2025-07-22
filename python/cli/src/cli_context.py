@@ -1,4 +1,5 @@
 import collections
+from enum import Enum
 import os
 
 from dotenv import dotenv_values
@@ -37,7 +38,7 @@ class CLIContext:
         elif self.lookInOSEnv and key in os.environ:
             value = os.environ[key]
 
-        # Throw exception if this variable must be set
+        # Throw exception if this variable must be set?
         if value is None:
             value = defaultValue
 

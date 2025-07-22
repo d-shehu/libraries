@@ -134,7 +134,7 @@ class CLIApp(user_module.UserModule):
                 self.logger.info(f"Debugging: {self.isDebugMode}")
                 if self.isDebugMode:
                     self.debugger = CLIDebugger(self.logger, self.context)
-                    self.debugger.start()
+                    self.debugger.wait()
     
                 # Secrets which also utilizes .env format
                 self.secretsFilepath = args.secrets_file
