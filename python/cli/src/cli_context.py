@@ -27,6 +27,17 @@ class CLIContext:
     def setLookInOSEnv(self, enabled):
         self.lookInOSEnv = enabled
 
+    def getEnvVariableBool(self, key):
+        value = self.getEnvVariable(key, "false")
+        # Unless explicitly set to false/0 or true/1 then raise exception
+        # as value not supported for bool.
+        if value.lower() == "false" or value == 0:
+            return False
+        elif value.lower() == "true" or value == 1:
+            return True
+        else:
+            raise Exception(f"Env variable {key} has non bool value {value}")
+    
     # Get environment variables either from OS environment or file
     def getEnvVariable(self, key, defaultValue = None):
         value = None

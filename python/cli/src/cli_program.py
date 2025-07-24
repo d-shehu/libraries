@@ -145,6 +145,10 @@ class CLIProgram(user_module.UserModule):
     def handleQuit(self) -> bool:
         self.isDone = True
         return True
+    
+class CLICommandBoolArg(Enum):
+    TRUE    = "True"
+    FALSE   = "False"
 
 # Encapsulate interactive command
 class CLICommand:
@@ -182,6 +186,9 @@ class CLICommand:
         
         # Fallback to string if type not specified
         if argType == inspect._empty:
+            argType = str
+        elif argType == bool:
+            action = CreateEnumAction(CLICommandBoolArg)
             argType = str
         # Convert enum options to choices but the type becomes string in parser
         elif isinstance(argType, type(Enum)):
@@ -231,6 +238,10 @@ class CLICommand:
                 argValue = getattr(parsedArgs, name)
                 if type(argValue) is list:
                     paramList.extend(argValue)
+                elif isinstance(argValue, CLICommandBoolArg):
+                    paramList.append(
+                        (argValue == CLICommandBoolArg.TRUE) if True else False
+                    )
                 else:
                     paramList.append(argValue)
 

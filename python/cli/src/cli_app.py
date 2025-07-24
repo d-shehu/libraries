@@ -1,5 +1,6 @@
 import os
 from pathlib import Path
+import sys
 
 # User packages
 from core import user_module, logs, install
@@ -25,6 +26,14 @@ class CLIApp(user_module.UserModule):
         self.version        = version
         self.additionalInfo = additionalInfo
         self.context        = CLIContext(self.logger)
+        self.debugger       = None
+
+        # Trigger debugging early if specified in argument
+        if "--debug" in sys.argv:
+            # Assume debugpy is installed
+            self.logger.info(f"Debugging: Enabled")
+            self.debugger = CLIDebugger(self.logger, self.context)
+            self.debugger.wait()
 
         self.argParser = argparse.ArgumentParser(prog          = self.appName,
                                                  description   = self.description,
@@ -112,7 +121,6 @@ class CLIApp(user_module.UserModule):
                 # Start logging after we've initialized
                 self.logger.debug(f"Sys args: {sys.argv}")
                 self.logger.debug(f"Logs dir: {logsDir}")
-                self.logger.debug(f"Debug: {self.isDebugMode}")
                 
                 # Disable logging for this level and below.
                 self.disableLoggingLevel = args.disable_logging
@@ -129,13 +137,6 @@ class CLIApp(user_module.UserModule):
                     self.context.configureEnvVariables(os.path.expanduser(self.envFilepath))
                 self.logger.debug(f"Env filepath: {self.envFilepath}")
 
-                # Configure debugging if enabled with given env
-                # Assume debugpy is installed
-                self.logger.info(f"Debugging: {self.isDebugMode}")
-                if self.isDebugMode:
-                    self.debugger = CLIDebugger(self.logger, self.context)
-                    self.debugger.wait()
-    
                 # Secrets which also utilizes .env format
                 self.secretsFilepath = args.secrets_file
                 if self.secretsFilepath != "":
@@ -226,6 +227,10 @@ class CLIApp(user_module.UserModule):
                 exitCode = os.EX_USAGE
         else:
             self.logger.error("CLIApp must be given a valid program to run.")
+
+        # Gracefully exit debugger
+        if self.debugger is not None:
+            self.debugger.stop()
 
         sys.exit(exitCode)
 
