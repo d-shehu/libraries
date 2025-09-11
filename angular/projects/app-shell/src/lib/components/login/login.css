@@ -1,0 +1,34 @@
+.login-container {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+}
+
+mat-card {
+    width: 300px;
+    padding: 16px;
+}
+
+.below-login {
+    display: block;
+    margin-top: 16px;
+    font-size: 14px;
+    /* Adjust as needed, matching Material Design spacing */
+    text-align: center;
+}
+
+.sign-up-link {
+    color: #1976d2;
+    /* Material primary blue */
+    text-decoration: underline;
+    cursor: pointer;
+    transition: color 0.2s ease;
+}
+
+.sign-up-link:hover,
+.sign-up-link:focus {
+    color: #004ba0;
+    /* Darker blue for hover/focus */
+    text-decoration: underline;
+}

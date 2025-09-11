@@ -1,0 +1,34 @@
+<div class="signup-container">
+    <mat-card>
+        <h2>Sign Up</h2>
+
+        <form [formGroup]="form" (ngSubmit)="onSubmit()">
+            <mat-form-field appearance="outline" class="full-width">
+                <mat-label>Email</mat-label>
+                <input matInput formControlName="email" type="email" required />
+            </mat-form-field>
+
+            <mat-form-field appearance="outline" class="full-width">
+                <mat-label>Username</mat-label>
+                <input matInput formControlName="userName" required />
+            </mat-form-field>
+
+            <mat-form-field appearance="outline" class="full-width">
+                <mat-label>Password</mat-label>
+                <input matInput formControlName="password" type="password" required />
+            </mat-form-field>
+
+            <mat-form-field appearance="outline" class="full-width">
+                <mat-label>Confirm Password</mat-label>
+                <input matInput formControlName="confirmPassword" type="password" required />
+                <mat-error *ngIf="form.hasError('passwordMismatch') && form.get('confirmPassword')?.touched">
+                    Passwords do not match
+                </mat-error>
+            </mat-form-field>
+
+            <button mat-raised-button color="primary" type="submit" [disabled]="form.invalid || loading">
+                {{ loading ? 'Creating...' : 'Sign Up' }}
+            </button>
+        </form>
+    </mat-card>
+</div>

@@ -1,0 +1,54 @@
+<!-- Navigation toolbar -->
+<mat-toolbar color="primary" class="top-toolbar">
+    <button matIconButton class="example-icon" aria-label="Example icon-button with menu icon">
+        <mat-icon>menu</mat-icon>
+    </button>
+    <span class="app-title">{{appTitle}}</span>
+    <span class="spacer"></span>
+
+    <!-- If logged in, show logout -->
+    @if (auth.isLoggedIn){
+        <button mat-icon-button (click)="auth.logout()" [routerLink]="'/login'">
+            <mat-icon aria-hidden="false" aria-label="Logout" fontIcon="logout"></mat-icon>
+        </button>
+    }
+     <!-- If logged out, show login -->
+    @if (! auth.isLoggedIn){
+        <button mat-icon-button [routerLink]="'/login'">
+            <mat-icon aria-hidden="false" aria-label="Login" fontIcon="login"></mat-icon>
+        </button>
+    }
+    
+</mat-toolbar>
+<!-- App containers -->
+<mat-sidenav-container class="app-container">
+    <!-- Navigation bar -->
+    <mat-sidenav mode="side" opened class="app-sidenav">
+        <mat-nav-list>
+            @for (item of visibleMenuItems; track $index) {
+                <a mat-list-item [routerLink]=item.link sidenav-menu>{{ item.label }}</a>
+            }
+        </mat-nav-list>
+    </mat-sidenav>
+    <!-- Main content -->
+    <mat-sidenav-content>
+        <div class="app-content">
+            <router-outlet></router-outlet>
+        </div>
+    </mat-sidenav-content>
+</mat-sidenav-container>
+<!-- Bottom sheet / shortcuts -->
+<mat-toolbar color="primary" class="bottom-toolbar">
+    <button mat-flat-button routerLink="/home" routerLinkActive="active-link">
+        <mat-icon>home</mat-icon>
+    </button>
+    <button mat-flat-button routerLink="/favorites" routerLinkActive="active-link">
+        <mat-icon>favorite</mat-icon>
+    </button>
+    <button mat-flat-button routerLink="/settings" routerLinkActive="active-link">
+        <mat-icon>settings</mat-icon>
+    </button>
+    <button mat-flat-button routerLink="/profile" routerLinkActive="active-link">
+        <mat-icon>account_circle</mat-icon>
+    </button>
+</mat-toolbar>

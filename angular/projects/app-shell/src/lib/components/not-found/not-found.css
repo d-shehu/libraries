@@ -1,0 +1,14 @@
+.not-found-container {
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    text-align: center;
+    padding: 2rem;
+}
+
+.not-found-icon {
+    font-size: 8rem;
+    margin-bottom: 1rem;
+}

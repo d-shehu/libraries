@@ -1,0 +1,19 @@
+.table-container {
+    padding: 16px;
+}
+
+.filter-box {
+    margin-bottom: 12px;
+    width: 300px;
+}
+
+table {
+    width: 100%;
+}
+
+.loading {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 80vh;
+}

@@ -1,0 +1,21 @@
+<div class="edit-container">
+    <mat-card>
+        <h2>Edit Your Profile</h2>
+        <form [formGroup]="form" (ngSubmit)="onSubmit()">
+
+            <mat-form-field appearance="outline" class="full-width">
+                <mat-label>Email</mat-label>
+                <input matInput type="email" formControlName="email" required />
+            </mat-form-field>
+
+            <mat-form-field appearance="outline" class="full-width">
+                <mat-label>Username</mat-label>
+                <input matInput type="text" formControlName="userName" required />
+            </mat-form-field>
+
+            <button mat-raised-button color="primary" type="submit" [disabled]="form.invalid || loading">
+                {{ loading ? 'Updating...' : 'Update' }}
+            </button>
+        </form>
+    </mat-card>
+</div>
