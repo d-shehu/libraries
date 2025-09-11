@@ -15,25 +15,31 @@ from .cli_debug        import *
 
 class CLIApp(user_module.UserModule):
     def __init__(self, 
-                 appName, 
-                 description,
-                 version,
-                 additionalInfo = ""):
+                 appName: str, 
+                 description: str,
+                 version: str,
+                 additionalInfo: str = ""):
+        
+        # Initialize early to enable debugging
+        logMgr          = logs.ConfigureConsoleOnlyLogging(appName + "_Logger")
+        self.context    = CLIContext(logMgr.getSysLogger())
+
+        # Trigger debugging as early as possible if specified in argument
+        if "--debug" in sys.argv:
+            # Assume debugpy is installed
+            logMgr.getSysLogger().info(f"Debugging: Enabled")
+            self.debugger = CLIDebugger(logMgr.getSysLogger(), self.context)
+            self.debugger.wait()
+
+        # Initialize parent class
         super().__init__(logs.ConfigureConsoleOnlyLogging(appName + "_Logger"))
         
         self.appName        = appName
         self.description    = description
         self.version        = version
         self.additionalInfo = additionalInfo
-        self.context        = CLIContext(self.logger)
+        
         self.debugger       = None
-
-        # Trigger debugging early if specified in argument
-        if "--debug" in sys.argv:
-            # Assume debugpy is installed
-            self.logger.info(f"Debugging: Enabled")
-            self.debugger = CLIDebugger(self.logger, self.context)
-            self.debugger.wait()
 
         self.argParser = argparse.ArgumentParser(prog          = self.appName,
                                                  description   = self.description,
@@ -43,7 +49,7 @@ class CLIApp(user_module.UserModule):
 
     # Override default usage from argparser
     def setUsage(self, appUsage):
-        self.argParser.setUsage(appUsage) 
+        self.argParser.usage = appUsage
 
     def configureArguments(self):
         self.argParser.add_argument("-m", "--mode",             type     = str, 
@@ -157,8 +163,8 @@ class CLIApp(user_module.UserModule):
                             
     
                 # Verbose enable
-                self.context.isVerboseMode = args.verbose
-                self.logger.debug(f"Verbose: {self.context.isVerboseMode}")
+                self.context.isVerbose = args.verbose
+                self.logger.debug(f"Verbose: {self.context.isVerbose}")
                 
         except Exception as e:
             self.logger.exception("Unable to parse one or more arguments.")
@@ -235,13 +241,14 @@ class CLIApp(user_module.UserModule):
         sys.exit(exitCode)
 
 class ArgValidator:
+    @staticmethod
     def parseDirPath(path):
         if path == "" or Path(GetFullPath(path)).is_dir():
             return path
         else:
             raise NotADirectoryError(path)
                 
-
+    @staticmethod
     def parseFilePath(path):
         if path == "" or Path(GetFullPath(path)).is_file():
             return path
@@ -249,8 +256,8 @@ class ArgValidator:
             raise FileNotFoundError(path)
             
 def main():
-    app = CLIApp("CLIApp", "CLIApp main function and simple demo.")
-    app.run(CLICommand())
+    app = CLIApp("CLIApp", "CLIApp main function and simple demo.", version = "0.0.1")
+    app.run(CLIProgram(app.logMgr))
 
 if __name__ == '__main__':
     main()

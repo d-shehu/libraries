@@ -1,5 +1,4 @@
 import debugpy
-import pydevd
 
 from .cli_context      import * 
 
@@ -37,5 +36,5 @@ class CLIDebugger:
 
     def stop(self):
         if self.isListening:
-            pydevd.stoptrace()
+            debugpy.wait_for_client.cancel()
             self.isListening = False

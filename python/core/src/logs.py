@@ -139,7 +139,6 @@ class Logger:
 
     def flush(self):
         self._get_handler().flush()
-        
     
 class LogFile(Logger):
     def __init__(self,

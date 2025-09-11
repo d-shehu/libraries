@@ -5,5 +5,4 @@ from core import install
 
 install.InstallDependencies(os.path.abspath(os.path.dirname(__file__)))
 
-from .src       import llm_manager
-from .src.rag   import collections, embeddings, meta, sources, transformer
+from .src import define, gauth_router

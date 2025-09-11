@@ -4,7 +4,7 @@ import inspect
 import os
 import shlex
 import sys
-from typing import get_type_hints
+from typing import Dict, get_type_hints, Optional
 
 # User packages
 from core import user_module
@@ -19,10 +19,10 @@ class CLIProgram(user_module.UserModule):
 
         self.isDone      = False
         self.cmdParser   = None
-        self.cmdHandlers = {}
-        self.context     = None
+        self.cmdHandlers:   Dict[str, CLICommand]   = {}
+        self.context:       Optional[CLIContext]    = None
 
-    def initParser(self, argParser, context):
+    def initParser(self, argParser, context: CLIContext):
         self.context     = context
         self.argParser   = argParser
         self.cmdParser   = self.argParser.add_subparsers(dest = "command", help = "Interactive command help") 

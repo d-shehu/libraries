@@ -1,8 +1,9 @@
-import collections
-from enum import Enum
-import os
+from dotenv         import dotenv_values
+from enum           import Enum
+from pathlib        import Path
 
-from dotenv import dotenv_values
+import collections.abc
+import os
 
 from .cli_program_mode import *
 from .cli_utilities    import *
@@ -27,8 +28,8 @@ class CLIContext:
     def setLookInOSEnv(self, enabled):
         self.lookInOSEnv = enabled
 
-    def getEnvVariableBool(self, key):
-        value = self.getEnvVariable(key, "false")
+    def getEnvVariableBool(self, key) -> bool:
+        value = self.getEnvVariableStr(key, "false")
         # Unless explicitly set to false/0 or true/1 then raise exception
         # as value not supported for bool.
         if value.lower() == "false" or value == 0:
@@ -58,12 +59,33 @@ class CLIContext:
             self.logger.warning(f"Unable to find {key} perhaps because env file not loaded.")
 
         return value
+    
+    def getEnvVariableStr(self, key, defaultValue = "") -> str:
+        return str(self.getEnvVariable(key, defaultValue))
 
     def setEnvVariable(self, key, value, warnIfSet = True):
         if key in self.envVariables and warnIfSet:
             self.logger.warning(f"{key} param already set.")
         self.envVariables[key] = value
 
+
+    def getDirectory(self, envDirectory) -> Path:
+        dirPath = Path()
+        try:
+            pathStr = self.getEnvVariable(envDirectory)
+            if pathStr is not None:
+                path = Path(Path(pathStr).expanduser().resolve())
+                if not path.is_dir():
+                    raise Exception(f"Directory '{path}' does not exist.")
+                dirPath = path
+            else:
+                raise Exception("Unable to fetch env variable: '{envDirectory}'")
+        except Exception as e:
+            self.logger.exception(f"Unable to get directory from env var")
+        
+        return dirPath
+
+    # TODO: consider changing to SecretStr
     def getSecret(self, key):
         value =  None
 
@@ -71,6 +93,10 @@ class CLIContext:
             value = self.secrets[key]
 
         return value
+    
+    def getSecretStr(self, key) -> str:
+        secret = self.getSecret(key)
+        return secret if secret is not None else ""
 
     def setSecret(self, key, value, warnIfSet = True):
         if key in self.secrets and warnIfSet:
@@ -81,7 +107,7 @@ class CLIContext:
     # A proper security model would restrict secrets base
     # on roles, etc.
     def getReadOnlySecrets(self):
-        return 
+        return self.secrets
 
 class ROSecrets(collections.abc.Mapping):
 

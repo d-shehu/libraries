@@ -19,10 +19,9 @@ class UserModule:
                  projectDir = "."
                 ):
         self._module = module if not module is None else sys.modules[self.__class__.__module__]
-        self._packagePath = os.path.abspath(os.path.dirname(os.path.dirname(self.module.__file__)))
+        if self.module.__file__ is not None:
+            self._packagePath = os.path.abspath(os.path.dirname(os.path.dirname(self.module.__file__)))
         self._logMgr = logMgr
-
-        self.logger.debug(f"Module: {self._module}")
 
         # Search only within user's project or otherwise derive package's parent directory
         if projectDir != ".":
@@ -84,7 +83,7 @@ class UserModule:
         requirementsFilepath = Path(outDir) / Path("requirements.txt")
         try:
             if append:
-                action.readRequirements(requirementsFilepath)
+                action.readRequirements(requirementsFilepath, self)
             self.logger.debug(f"Requirements for: {self.module}")
             lsRequirements = action.getRequirements()
             with open(requirementsFilepath, "w") as file:
@@ -140,10 +139,10 @@ class Action:
         if not userModuleFile in self.actionSet:
             self.actionSet.add(userModuleFile)
             self._doAction(userModule)
-        else:
-            userModule.logger.debug(f"Action already run on {userModuleFile}")
+        #else:
+        #    userModule.logger.debug(f"Action already run on {userModuleFile}")
 
-    def _doAction(self):
+    def _doAction(self, userModule):
         raise Exception("Implement Action's _doAction() in child class")
         
 class InstallDepsAction(Action):
@@ -161,11 +160,12 @@ class GetDepsAction(Action):
         
     def _doAction(self, userModule):
         self.readRequirements(
-            Path(userModule.packagePath) / Path("requirements.txt")
+            Path(userModule.packagePath) / Path("requirements.txt"),
+            userModule
         )
         
 
-    def readRequirements(self, requirementsPath):
+    def readRequirements(self, requirementsPath, userModule):
         if requirementsPath.is_file():
             try:
                 with open(requirementsPath, "r") as file:
@@ -199,7 +199,8 @@ class ReloadAction(Action):
 def LoadFromFile(moduleName, package, libPath = ".", doInstall = True, doReload =  False, projectDir = "."):
     
     # TODO: consider if it's possible to configure logging before loading module.
-    logger = ConfigureConsoleOnlyLogging("LoadFromFile").getSysLogger()
+    logMgr = ConfigureConsoleOnlyLogging("LoadFromFile")
+    logger =logMgr.getSysLogger()
     
     packagePath = Path(libPath) / Path(package.replace(".", os.path.sep))
 
@@ -207,7 +208,7 @@ def LoadFromFile(moduleName, package, libPath = ".", doInstall = True, doReload 
     InstallDependencies(packagePath, logger)
     
     module = importlib.import_module("." + moduleName, package + ".src")    
-    userModule = UserModule(logger, module, projectDir)
+    userModule = UserModule(logMgr, module, projectDir)
     
     # Simplify dev for local packages by reloading all modules and deps recursively
     if doInstall:
