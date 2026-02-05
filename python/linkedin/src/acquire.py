@@ -6,6 +6,8 @@ from scraper import web_scraper
 
 from .utilities import *
 
+import re
+
 # Aliases
 LogLine = logs.LogLine
 
@@ -14,6 +16,9 @@ LogLine = logs.LogLine
 # with that name. Use int literals to workaround this.
 JOBS_MODE_SEARCH          = 1
 JOBS_MODE_RECOMMENDATIONS = 2
+
+# Some hackary to work around linkedin
+JOB_ID_PATTERN = re.compile(r"/jobs/view/(\d+)", re.IGNORECASE)
 
 class JobCollector:
     def __init__(self, searchMode, scraper, logger):
@@ -67,10 +72,19 @@ class JobCollector:
             
         return urlToApply
 
-    def parseJobDetails(self, job):
+    def parseJobDetails(self, job, isRecommendation):
         parseOK = False
         
         url = job['url']
+
+        # A little switch-a-roo to help parse the recommendations
+        if isRecommendation:
+            # Extract the job id
+            jobIDMatch = JOB_ID_PATTERN.search(url)
+            if jobIDMatch:
+                jobID=int(jobIDMatch.group(1))
+                url=f"https://www.linkedin.com/jobs/collections/recommended?currentJobId={jobID}"
+
         # Load the job description
         if self.scraper.loadPage(url):
             # Introduce a retry mechanism to handle transient DOM loading issues
@@ -81,6 +95,8 @@ class JobCollector:
                     
                     # Confirm page has loaded by checking for one of the fields.
                     titlePath = "//div[contains(@class, 'job-details-jobs-unified-top-card__job-title')]/h1"
+                    if isRecommendation:
+                        titlePath = titlePath + "/a"
                     title = self.scraper.getElementByXPath(titlePath)
                     job["title"] = title.text
                  
@@ -113,7 +129,7 @@ class JobCollector:
                             lsJobDetails.append(element.get_attribute("innerText"))
     
                     # Details include Comp range, employment_type, work model
-                    jobDetails = "//button[@class='job-details-preferences-and-skills']/div/span"
+                    jobDetails = "//div[@class='job-details-fit-level-preferences']/button/span//strong"
                     jobDetailsElements = self.scraper.getElementsByXPath(jobDetails)
                     if jobDetailsElements is not None and len(jobDetailsElements) > 0:
                         for element in jobDetailsElements:

@@ -68,7 +68,17 @@ class JobSearch(user_module.UserModule):
 
         return self.authenticator.isAuthenticated()
 
-    def processJobs(self, collector, description):
+    def doLogout(self) -> bool:
+        success = False
+
+        if self.authenticator is not None:
+            success = self.authenticator.logout()
+        else:
+            self.logger.error("Authenticator object is invalid.")
+
+        return success
+    
+    def processJobs(self, collector, description, isRecommendation):
         dfProcessedJobs = None
         
         # Instantiate the progress bar
@@ -79,7 +89,7 @@ class JobSearch(user_module.UserModule):
                 
             for job in lsJobs:
                 try:
-                    collector.parseJobDetails(job)
+                    collector.parseJobDetails(job, isRecommendation)
                 except Exception as e:
                     self.logger.exception("Couldn't parse other fields.") 
                 self.progressTracker.increment_value(1)
@@ -101,7 +111,7 @@ class JobSearch(user_module.UserModule):
                 collector.fetchAllJobs(url, maxPages)
     
         # Extract job results
-        return self.processJobs(collector, "Processing Search Results: ")
+        return self.processJobs(collector, "Processing Search Results: ", False)
 
     # Return dataframe with job search results. After so many pages, relevance declines dramatically.
     def doSearch(self, locations, roles, timespan = "day", maxPages = 10):
@@ -131,7 +141,7 @@ class JobSearch(user_module.UserModule):
         url = "https://www.linkedin.com/jobs/collections/recommended"
         listJobs = collector.fetchAllJobs(url, maxPages)
         
-        return self.processJobs(collector, "Processing Recommendations: ")
+        return self.processJobs(collector, "Processing Recommendations: ", True)
     
     # Quality of recommendations drops off dramatically, more so than
     # search results. Limit search to 1-5 pages at most.
@@ -140,10 +150,13 @@ class JobSearch(user_module.UserModule):
         
         if self.authenticator.isAuthenticated():
             dfRecommendations = self.getRecommendations(maxPages)
-            self.logger.info("Found {0} recommended jobs".format(dfRecommendations.shape[0]))
+            if dfRecommendations is not None:
+                self.logger.info("Found {0} recommended jobs".format(dfRecommendations.shape[0]))
     
-            # Clean up, format and sort
-            dfRecommendedJobs = self.formatter.formatJobRecords(dfRecommendations)
+                # Clean up, format and sort
+                dfRecommendedJobs = self.formatter.formatJobRecords(dfRecommendations)
+            else:
+                self.logger.info("No recommendations to process.")
         else:
             self.logger.error("Unable to search as user is not authenticated.")
 

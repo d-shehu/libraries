@@ -33,9 +33,10 @@ class QueryBuilder:
         if self.scraper.loadPage(searchURL):
             self.scraper.refreshPage()
     
-            try:
-                # Retry a couple of times as the search seems a bit glitchy
-                for i in range(1,3):
+            # Retry a couple of times as the search seems a bit glitchy
+            for i in range(1,3):
+
+                try:
                     # Linkedin URL changes after initial page load by automatically getting first item.
                     if self.scraper.waitForURLToChange(searchURL):
                         currSearchURL = self.scraper.getCurrentPage()
@@ -50,14 +51,13 @@ class QueryBuilder:
                             urlWithLoc = self.scraper.getCurrentPage()
                             
                             # Extract the geoID using this expression.
-                            regExpr = "\&geoId=(\d+)"
+                            regExpr = "\\&geoId=(\\d+)"
                             geoIDSearch = re.search(regExpr, urlWithLoc, re.IGNORECASE)
                             if geoIDSearch:
                                 geoID = int(geoIDSearch.group(1))
                                 break
-                        
-            except Exception as e:
-                self.logger.exception(f"Error: unable to extract geoID from {locationStr}")
+                except Exception as e:
+                    self.logger.exception(f"Error: unable to extract geoID from {locationStr}")
     
         if geoID == 0:
             self.logger.error(f"Could not get geoID from {locationStr}")
@@ -121,7 +121,7 @@ class QueryBuilder:
     
             queryURL = urlBase + "?" + arguments
         else:
-            self.log.error("One or more arguments were invalid")
+            self.logger.error("One or more arguments were invalid")
         
         return queryURL
 

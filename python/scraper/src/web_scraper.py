@@ -475,3 +475,6 @@ class WebScraper(user_module.UserModule):
         # Saves screenshot of entire page
         screenshot = self.browser.get_full_page_screenshot_as_png() 
         return Image(screenshot, width=self.width, height=self.height)
+    
+    def saveBrowserScreenshot(self, path: str):
+        self.browser.save_screenshot(path)

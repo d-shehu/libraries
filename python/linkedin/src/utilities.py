@@ -51,7 +51,7 @@ class Utilities:
 
     def parsePosted(self, str, date):
         try:
-            numbers = re.findall("\d+", str)
+            numbers = re.findall(r"\d+", str)
             units = re.findall("(minute|hour|day|week|month)", str)
     
             if len(numbers) == 1 and len(units) == 1:
@@ -81,7 +81,7 @@ class Utilities:
         appliedCount = -1
         
         try:
-            numbers = re.findall("\d+", str)
+            numbers = re.findall(r"\d+", str)
             
             # Match a single number
             if len(numbers) == 1:
@@ -198,22 +198,23 @@ class Utilities:
             matchLocation = self.parseLocation(lsDetails[0], job)
             
             # Match most common patterns such as $122 per hour or 125K/yr.
-            ratePattern = "\$\s*\d+(\.\d+)*\s*K*(\/\s*(yr|year|hr|hour))"
-            compPattern = f"{ratePattern}(\s*-\s*{ratePattern})*"
+            ratePattern = r"\$\s*\d+(\.\d+)*\s*K*(\/\s*(yr|year|hr|hour))"
+            compPattern = fr"{ratePattern}(\s*-\s*{ratePattern})*"
             
             for i in range(1, len(lsDetails)):
                 detail = lsDetails[i]
+                detail = detail.strip() # Strip leading and trailing space
                 # Skip delimiter
-                if re.match("^\s*·\s*", detail) is None:    
+                if re.match(r"^\s*·\s*", detail) is None:    
                     # Date/time posted
                     # Derive the posted date which is a slightly inaccurate process since it doesn't account for processing. 
                     # Linkedin itself isn't very precise (1 day ago, etc.)
-                    if re.match("^(Posted|Reposted)?\s*(\d+ (minute|hour|day|week|month)s? ago)", detail):
+                    if re.match(r"^(Posted|Reposted)?\s*(\d+ (minute|hour|day|week|month)s? ago)", detail):
                         job["posted"]      = detail
                         job["posted_date"] = self.parsePosted(detail, date.today())
                     # Applied count
-                    elif (re.match("(Over\s+)*\d+\s+(people|person)\s+(clicked)\s+(apply)", detail) 
-                          or re.match("(Over\s+)*\d+\s+(applicants)", detail)
+                    elif (re.match(r"(Over\s+)*\d+\s+(people|person)\s+(clicked)\s+(apply)", detail) 
+                          or re.match(r"(Over\s+)*\d+\s+(applicants)", detail)
                          ):
                         job["applied_count"] = self.parseAppliedCount(detail)
                     

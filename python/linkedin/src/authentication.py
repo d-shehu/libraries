@@ -1,12 +1,17 @@
 import getpass
 
+LOGIN_TIMEOUT = 3 # ~second timeout for each login attempt
+
 class Authenticator:
     def __init__(self, scraper, logger):
+        self.scraper       = scraper
+        self.logger        = logger
+        self.__reset()
+
+    def __reset(self):
         self.authenticated = False
         self.username      = ""
         self.password      = ""
-        self.scraper       = scraper
-        self.logger        = logger
 
     def login(self, username, password):
         if not self.authenticated:
@@ -19,8 +24,18 @@ class Authenticator:
         return self.authenticated
 
     # Mainly for debugging as there is no need to switch credentials as yet.
-    def logout(self):
-        raise Exception("Authenticator 'logout' function not defined.")
+    def logout(self) -> bool:
+        success = False
+
+        try:
+            # Assume we've successfully logged out unless an exception is triggered
+            self.scraper.loadPage("https://www.linkedin.com/m/logout")
+            self.__reset()
+            success = True
+        except Exception as e:
+            self.logger.exception("Unable to logout.")
+
+        return success
 
     def isAuthenticated(self):
         return self.authenticated
@@ -33,7 +48,7 @@ class Authenticator:
             pageLoaded = self.scraper.waitForElementToLoad("username")
         except Exception as e:
             self.logger.exception("Unable to find field 'username' field in login page.")
-    
+
         if not pageLoaded:
             self.logger.error("Couldn't load login page.")
     
@@ -50,7 +65,7 @@ class Authenticator:
            ):
             urlCurrentPage = self.scraper.getCurrentPage()
             if (self.scraper.clickOnElementByXPath(loginButtonPath)
-                and self.scraper.waitForURLToChange(urlCurrentPage)
+                and self.scraper.waitForURLToChange(urlCurrentPage, LOGIN_TIMEOUT, True)
                ):
                 # If redirected to the feed then successfully logged in
                 if self.scraper.getCurrentPage() == "https://www.linkedin.com/feed/":
@@ -76,7 +91,11 @@ class Authenticator:
         # Otherwise if element doesn't load assume check isn't triggered
         # Could speed this up by checking if feed is loaded for example. 
         # But since log in happens once per session it's not a big performance hit.
-        else:
+        elif (self.scraper.getCurrentPage() == "https://www.linkedin.com/feed"):
             success = True 
-    
+        # Invalid username / credentials?
+        else:
+            success = False
+            self.__reset()
+
         return success
