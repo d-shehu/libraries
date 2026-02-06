@@ -87,12 +87,18 @@ class CLIProgram(user_module.UserModule):
             
             try:
                 userInput = input("Enter command: ")
-                parsedArgs = self.argParser.parse_args(shlex.split(userInput)) 
+                # TOOD: remove when vscode is patched
+                # Ugly hack for vscode issue
+                if not userInput.startswith("source /home"):
+                    parsedArgs = self.argParser.parse_args(shlex.split(userInput)) 
                 
-                # Keep running until user exits
-                if self.runCommand(parsedArgs) != os.EX_OK and parsedArgs is not None:
-                    self.logger.debug(f"Failed to run command: {parsedArgs}")
-                    self.argParser
+                    # Keep running until user exits
+                    if self.runCommand(parsedArgs) != os.EX_OK and parsedArgs is not None:
+                        self.logger.debug(f"Failed to run command: {parsedArgs}")
+                        self.argParser
+                else:
+                    self.logger.error("Discarding bogus input from stdin")
+                    
             # Intercept but don't exit for malformed arguments in interactive mode
             except (argparse.ArgumentError, CLIAppArgumentError, CLIAppParserExit) as e:
                 self.logger.error(e)

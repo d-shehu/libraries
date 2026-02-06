@@ -77,13 +77,12 @@ class JobCollector:
         
         url = job['url']
 
-        # A little switch-a-roo to help parse the recommendations
-        if isRecommendation:
-            # Extract the job id
-            jobIDMatch = JOB_ID_PATTERN.search(url)
-            if jobIDMatch:
-                jobID=int(jobIDMatch.group(1))
-                url=f"https://www.linkedin.com/jobs/collections/recommended?currentJobId={jobID}"
+        # Extract the job id
+        # Note: a little switch-a-roo to workaround obfuscation of tags
+        jobIDMatch = JOB_ID_PATTERN.search(url)
+        if jobIDMatch:
+            jobID=int(jobIDMatch.group(1))
+            url=f"https://www.linkedin.com/jobs/collections/recommended?currentJobId={jobID}"
 
         # Load the job description
         if self.scraper.loadPage(url):
@@ -94,9 +93,8 @@ class JobCollector:
                     self.scraper.refreshPage()
                     
                     # Confirm page has loaded by checking for one of the fields.
-                    titlePath = "//div[contains(@class, 'job-details-jobs-unified-top-card__job-title')]/h1"
-                    if isRecommendation:
-                        titlePath = titlePath + "/a"
+                    # Using "reconnections" logic path to work around obfuscation. See above.
+                    titlePath = "//div[contains(@class, 'job-details-jobs-unified-top-card__job-title')]/h1/a"
                     title = self.scraper.getElementByXPath(titlePath)
                     job["title"] = title.text
                  
