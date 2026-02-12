@@ -1,14 +1,17 @@
-import debugpy
-
 from .cli_context      import * 
 
 class CLIDebugger:
+
     def __init__(self, logger, cliContext):
         self.logger = logger
         self.debugAddress   = cliContext.getEnvVariable("DEBUG_ADDRESS", "0.0.0.0")
         self.debugPort      = cliContext.getEnvVariable("DEBUG_PORT", 3000)
         self.isListening    = False
         self.isDone         = False
+
+        # Only import if debugging
+        import debugpy
+        self.debugpy = debugpy
 
     def __del__(self):
         if not self.isDone:
@@ -18,7 +21,7 @@ class CLIDebugger:
     def start(self):
         if not self.isDone and not self.isListening:
             self.logger.info(f"Listening for debugger on '{self.debugAddress}:{self.debugPort}'.")
-            debugpy.listen((self.debugAddress, self.debugPort))
+            self.debugpy.listen((self.debugAddress, self.debugPort))
             self.isListening = True
         elif not self.isDone:
             self.logger.error("Already listening for debugger.")
@@ -31,10 +34,10 @@ class CLIDebugger:
             self.start()
 
         self.logger.info("Waiting for client to attach...")
-        debugpy.wait_for_client()
-        debugpy.breakpoint()
+        self.debugpy.wait_for_client()
+        self.debugpy.breakpoint()
 
     def stop(self):
         if self.isListening:
-            debugpy.wait_for_client.cancel()
+            self.debugpy.wait_for_client.cancel()
             self.isListening = False

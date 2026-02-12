@@ -67,7 +67,7 @@ class LogFormatterTxt(logging.Formatter):
         # Piggyback on parent class
         super().__init__(fmt = logFormat, datefmt = dateFormat, style = "%")
         
-    def getFieldFormat(field, fieldWidth):
+    def getFieldFormat(field, fieldWidth) -> str:
         formattedField = ""
         if fieldWidth == NOT_FIXED_WIDTH:
             formattedField = f"%({field})s"
@@ -128,7 +128,7 @@ class Logger:
     def _create(self):
         raise Exception("LogHandler child class must override _create.")
 
-    def get_id(self):
+    def get_id(self) -> uuid.UUID:
         return self.id
         
     def install(self, sysLogger):
@@ -186,7 +186,7 @@ class LogMgr:
             self.loggers[logger.get_id()] = logger
             logger.install(self.sysLogger)
 
-    def removeHandlerByID(self, loggerID):
+    def removeHandlerByID(self, loggerID) -> bool:
         success = False
         if loggerID in self.loggers:
             self.loggers[loggerID].uninstall(self.sysLogger)
@@ -202,7 +202,7 @@ class LogMgr:
     def unsuppressLogger(self):
         logging.disable(logging.NOTSET)
 
-    def getSysLogger(self):
+    def getSysLogger(self) -> logging.Logger:
         return self.sysLogger
 
     def flush(self):
@@ -221,11 +221,11 @@ class LogLine:
             for i in range(1, numArgs):
                 self.logLine = self.logLine + sep + str(args[i])
 
-    def __str__(self):
+    def __str__(self) -> str:
         return self.logLine
         
 # Reasonable defaults for user and dev logging
-def ConfigureConsoleOnlyLogging(loggerName):
+def ConfigureConsoleOnlyLogging(loggerName) -> LogMgr:
     debugLogFormat    = LogFormatterTxt(LOG_FIELDS_DEBUG_DETAILED,   "|", LOG_DATE_FORMAT)
     standardLogFormat = LogFormatterTxt(LOG_FIELDS_LIST_DEFAULT, "|", LOG_DATE_FORMAT)
 
@@ -238,7 +238,7 @@ def ConfigureConsoleOnlyLogging(loggerName):
 
     return LogMgr(loggerName, lsLoggers)
     
-def ConfigureDefaultLogging(loggerName, logDir = DEF_LOG_DIR):
+def ConfigureDefaultLogging(loggerName, logDir = DEF_LOG_DIR) -> LogMgr:
     debugLogFormat    = LogFormatterTxt(LOG_FIELDS_DEBUG_DETAILED,   "|", LOG_DATE_FORMAT)
     standardLogFormat = LogFormatterTxt(LOG_FIELDS_LIST_DEFAULT, "|", LOG_DATE_FORMAT)
 

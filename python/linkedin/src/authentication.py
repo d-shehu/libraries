@@ -1,5 +1,10 @@
 import getpass
 
+from typing             import Optional
+
+# User packages
+from my_secrets         import secret
+
 LOGIN_TIMEOUT = 3 # ~second timeout for each login attempt
 
 class Authenticator:
@@ -10,10 +15,10 @@ class Authenticator:
 
     def __reset(self):
         self.authenticated = False
-        self.username      = ""
-        self.password      = ""
+        self.username: Optional[secret.Secret] = None
+        self.password: Optional[secret.Secret] = None
 
-    def login(self, username, password):
+    def login(self, username: Optional[secret.Secret], password: Optional[secret.Secret]):
         if not self.authenticated:
             self.username = username
             self.password = password
@@ -60,8 +65,9 @@ class Authenticator:
         #Fill in form and login
         loginButtonPath="//*/form[@class='login__form']/div[@class='login__form_action_container ']/button"
     
-        if (self.scraper.setElementText("username", self.username) 
-            and self.scraper.setElementText("password", self.password)
+        if (self.username is not None and self.password is not None
+            and self.scraper.setElementText("username", self.username.expose()) 
+            and self.scraper.setElementText("password", self.password.expose())
            ):
             urlCurrentPage = self.scraper.getCurrentPage()
             if (self.scraper.clickOnElementByXPath(loginButtonPath)

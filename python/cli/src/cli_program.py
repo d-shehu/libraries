@@ -7,7 +7,8 @@ import sys
 from typing import Dict, get_type_hints, Optional
 
 # User packages
-from core import user_module
+from core              import user_module
+from my_secrets        import secrets_mgr 
 
 # Local package
 from .cli_context      import *
@@ -21,11 +22,13 @@ class CLIProgram(user_module.UserModule):
         self.cmdParser   = None
         self.cmdHandlers:   Dict[str, CLICommand]   = {}
         self.context:       Optional[CLIContext]    = None
+        self.secretMgr:     Optional[secrets_mgr.SecretsMgr] = None
 
-    def initParser(self, argParser, context: CLIContext):
-        self.context     = context
-        self.argParser   = argParser
-        self.cmdParser   = self.argParser.add_subparsers(dest = "command", help = "Interactive command help") 
+    def initParser(self, argParser, context: CLIContext, secretsMgr: secrets_mgr.SecretsMgr):
+        self.context    = context
+        self.secretMgr  = secretsMgr
+        self.argParser  = argParser
+        self.cmdParser  = self.argParser.add_subparsers(dest = "command", help = "Interactive command help") 
 
         # Declare handlers. This can be overriden in subclass.
         self.defineHandlers()
@@ -41,7 +44,7 @@ class CLIProgram(user_module.UserModule):
             "usage": CLICommand(self.cmdParser, "usage", self.handleUsage, "Print help information.")
         }
 
-        if self.context.mode == CLIProgramMode.Interactive:
+        if self.context is not None and self.context.mode == CLIProgramMode.Interactive:
             self.addHandler(
                 CLICommand(self.cmdParser, "quit",  self.handleQuit,  "Exit from interactive mode.")
             )
@@ -271,7 +274,7 @@ def CreateEnumAction(enumClass):
             converted = None
             if isinstance(values, str):
                 converted = enumClass(values)
-            else:
+            elif values is not None:
                 converted = [enumClass(value) for value in values]
             setattr(namespace, self.dest, converted)
 

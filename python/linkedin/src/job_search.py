@@ -8,17 +8,18 @@ import time
 from geopy.geocoders import Nominatim
 
 # Local packages
-from core       import user_module, logs
-from scraper    import web_scraper
-from utilities  import progress_tracker
+from core               import user_module, logs
+from my_secrets         import secret
+from scraper            import web_scraper
+from utilities          import progress_tracker
 
 # This package
-from .acquire import *
-from .authentication import *
-from .format import *
-from .persist import *
-from .queries import *
-from .utilities import *
+from .acquire           import *
+from .authentication    import *
+from .format            import *
+from .persist           import *
+from .queries           import *
+from .utilities         import *
 
 class JobSearch(user_module.UserModule):
     def __init__(self, 
@@ -51,22 +52,28 @@ class JobSearch(user_module.UserModule):
         return (self.scraper is not None)
 
     def loadFeed(self):
-        if self.authenticator.isAuthenticated():
-            self.scraper.loadPage("https://www.linkedin.com/feed/")
+        if self.authenticator is not None and self.authenticator.isAuthenticated():
+            if self.scraper is not None:
+                self.scraper.loadPage("https://www.linkedin.com/feed/")
+            else:
+                raise Exception("Scraper is not initialized.")
         else:
-            raise Exception("Can't access the feed, log in first.")
+            raise Exception("Can't access the feed. Try logging in first.")
         
-    def doLogin(self, username, password):
-        if self.scraper.browser is not None:
+    def doLogin(self, username: Optional[secret.Secret], password: Optional[secret.Secret]):
+        if (self.authenticator is not None 
+            and self.scraper is not None 
+            and self.scraper.browser is not None
+            ):
             # Retry a few times in case of transient connection issue
             for i in range(1,4):
                 self.logger.debug(f"Logging attempt: {i}")
                 if self.authenticator.login(username, password):
                     break
         else:
-            self.logger.error("Unable to load browser")
+            self.logger.error("Unable to load browser or issues with authenticator")
 
-        return self.authenticator.isAuthenticated()
+        return self.authenticator is not None and self.authenticator.isAuthenticated()
 
     def doLogout(self) -> bool:
         success = False
@@ -117,11 +124,14 @@ class JobSearch(user_module.UserModule):
     def doSearch(self, locations, roles, timespan = "day", maxPages = 10):
         dfCurrJobs = None
         
-        if self.authenticator.isAuthenticated():
+        if self.authenticator is not None and self.authenticator.isAuthenticated():
             # Reload feed to reset crawler.
             self.loadFeed()
             dfCurrSearchResults = self.search(roles, locations, timespan, maxPages)
-            self.logger.info("Found {0} jobs from search".format(dfCurrSearchResults.shape[0]))
+            if dfCurrSearchResults is not None:
+                self.logger.info("Found {0} jobs from search".format(dfCurrSearchResults.shape[0]))
+            else:
+                self.logger.error("Search results dataframe object is not initialized.")
     
             # Clean up, format and sort
             dfCurrJobs = self.formatter.formatJobRecords(dfCurrSearchResults)
@@ -130,8 +140,8 @@ class JobSearch(user_module.UserModule):
 
         return dfCurrJobs
 
-    def persistResults(self, gsheetSecretsFile, spreadsheetURL, sheetLabel, dfJobs):
-        serializer = Serializer(gsheetSecretsFile, spreadsheetURL, sheetLabel, self.logger)
+    def persistResults(self, gsheetSecret: secret.Secret, spreadsheetURL, sheetLabel, dfJobs):
+        serializer = Serializer(gsheetSecret, spreadsheetURL, sheetLabel, self.logger)
         return serializer.updateWorksheet(dfJobs)
 
     def getRecommendations(self, maxPages):
@@ -148,7 +158,7 @@ class JobSearch(user_module.UserModule):
     def doRecommendations(self, maxPages = 5):    
         dfRecommendations = None
         
-        if self.authenticator.isAuthenticated():
+        if self.authenticator is not None and self.authenticator.isAuthenticated():
             dfRecommendations = self.getRecommendations(maxPages)
             if dfRecommendations is not None:
                 self.logger.info("Found {0} recommended jobs".format(dfRecommendations.shape[0]))

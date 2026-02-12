@@ -1,14 +1,19 @@
+from gspread_formatting             import *
+from oauth2client.service_account   import ServiceAccountCredentials
+
 import pandas as pd
 import gspread
-from gspread_formatting import *
-from oauth2client.service_account import ServiceAccountCredentials
 import os
 
-from .format import *
-from .utilities import *
+# User packages
+from my_secrets     import secret
+
+# Local package
+from .format        import *
+from .utilities     import *
 
 class Serializer:
-    def __init__(self, gsheetSecretsFilepath, spreadsheetURL, sheetLabel, logger):
+    def __init__(self, gsheetSecret: secret.Secret, spreadsheetURL, sheetLabel, logger):
         self.logger        = logger
         self.credentials   = None
         self.gsheetsClient = None
@@ -20,18 +25,18 @@ class Serializer:
         # Connect to Google Sheets. Assume the secret file is at this location.
         # Also assumes there is a service account associated with secret which 
         # has read/write permission on sheet.
-        gsheetSecretsFilepath = os.path.expandvars(gsheetSecretsFilepath)
-        self.logger.debug(f"Reading gsheet secrets from: {gsheetSecretsFilepath}")
-        self.authorizeGoogleSheets(gsheetSecretsFilepath)
+        self.authorizeGoogleSheets(gsheetSecret)
         self.loadWorksheetFromGoogleDrive(spreadsheetURL, sheetLabel)
         
-    def authorizeGoogleSheets(self, credentialsFilepath):
+    def authorizeGoogleSheets(self, gsheetSecret: secret.Secret):
         scope = ["https://www.googleapis.com/auth/spreadsheets",
                  "https://www.googleapis.com/auth/drive"]
     
         try:
-            self.logger.debug(f"Credentials filepath: {credentialsFilepath}")
-            self.credentials = ServiceAccountCredentials.from_json_keyfile_name(credentialsFilepath, scope)
+            self.credentials = ServiceAccountCredentials.from_json_keyfile_dict(
+                gsheetSecret.expose(), 
+                scope
+            )
             self.gsheetsClient = gspread.authorize(self.credentials)
         except Exception as e:
             self.logger.exception("Unable to get access to Google sheets.")

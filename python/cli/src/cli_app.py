@@ -4,6 +4,7 @@ import sys
 
 # User packages
 from core import user_module, logs, install
+from my_secrets        import secrets_mgr
 
 # Local package
 from .cli_context      import *
@@ -11,7 +12,23 @@ from .cli_program      import *
 from .cli_program_mode import *
 from .cli_argparser    import *
 from .cli_utilities    import *
+
 from .cli_debug        import *
+
+class ArgValidator:
+    @staticmethod
+    def parseDirPath(path):
+        if path == "" or Path(GetFullPath(path)).is_dir():
+            return path
+        else:
+            raise NotADirectoryError(path)
+                
+    @staticmethod
+    def parseFilePath(path):
+        if path == "" or Path(GetFullPath(path)).is_file():
+            return path
+        else:
+            raise FileNotFoundError(path)
 
 class CLIApp(user_module.UserModule):
     def __init__(self, 
@@ -23,6 +40,7 @@ class CLIApp(user_module.UserModule):
         # Initialize early to enable debugging
         logMgr          = logs.ConfigureConsoleOnlyLogging(appName + "_Logger")
         self.context    = CLIContext(logMgr.getSysLogger())
+        self.secretsMgr = secrets_mgr.SecretsMgr(appName, logMgr)
 
         # Trigger debugging as early as possible if specified in argument
         if "--debug" in sys.argv:
@@ -79,10 +97,20 @@ class CLIApp(user_module.UserModule):
                                                                 help     = "Enable debug mode and logging. Defaults to false.",
                                                                 default  = False)
         
-        self.argParser.add_argument(      "--secrets-file",     type     = ArgValidator.parseFilePath,
+        # Select either dotenv (services) or keyring
+        secretsGroup = self.argParser.add_mutually_exclusive_group(required=False)
+
+        secretsGroup.add_argument(      "--secrets-file",       type     = ArgValidator.parseFilePath,
                                                                 help     = "Path to secrets file with API keys, passwords, etc.",
                                                                 default  = "")
 
+        secretsGroup.add_argument(      "--keyring",            type     = ArgValidator.parseFilePath,
+                                                                dest     = "use_keyring",
+                                                                help     = "Use keyring python package and corresponding backend for desktop apps.",
+                                                                default  = "")
+        # End security group
+
+        # Set key/value via CLI
         self.argParser.add_argument(      "--set",              nargs    = 3,
                                                                 metavar  = ("TYPE", "KEY", "VALUE"),
                                                                 action   = "append",
@@ -146,8 +174,12 @@ class CLIApp(user_module.UserModule):
                 # Secrets which also utilizes .env format
                 self.secretsFilepath = args.secrets_file
                 if self.secretsFilepath != "":
-                    self.context.configureSecrets(os.path.expanduser(self.secretsFilepath))
-                self.logger.debug(f"Secrets filepath: {self.secretsFilepath}")
+                    self.logger.debug(f"Secrets filepath: {self.secretsFilepath}")
+                    fullPathToEnv = GetFullPath(os.path.expanduser(self.secretsFilepath))
+                    self.secretsMgr.loadFromEnv(fullPathToEnv)
+                elif args.use_keyring:
+                    self.logger.debug(f"Keyring secrets enabled")
+                    self.secretsMgr.loadFromKeyring()
 
                 # Env file and secrets can be overriden by params
                 # For now triggering an exception to avoid careless error
@@ -157,7 +189,7 @@ class CLIApp(user_module.UserModule):
                         if kind == "param":
                             self.context.setEnvVariable(key, value)
                         elif kind == "secret":
-                            self.context.setSecret(key, value)
+                            self.secretsMgr.putSecret(key, value)
                         else:
                             raise Exception(f"Can't set key-value pair as '{kind}' is unknown.")
                             
@@ -165,7 +197,7 @@ class CLIApp(user_module.UserModule):
                 # Verbose enable
                 self.context.isVerbose = args.verbose
                 self.logger.debug(f"Verbose: {self.context.isVerbose}")
-                
+
         except Exception as e:
             self.logger.exception("Unable to parse one or more arguments.")
             args = None # Failed to parse arguments
@@ -197,7 +229,7 @@ class CLIApp(user_module.UserModule):
             pgmParser = self.argParser 
             if self.getModeFromArgv() == CLIProgramMode.Interactive:
                 pgmParser = CLIAppArgParser("Enter command:")
-            program.initParser(pgmParser, self.context)
+            program.initParser(pgmParser, self.context, self.secretsMgr)
 
              # Parse env variables and configuration to successfully run program.
             parsedArgs = self.parseArguments()
@@ -234,30 +266,22 @@ class CLIApp(user_module.UserModule):
         else:
             self.logger.error("CLIApp must be given a valid program to run.")
 
+        # Gracefull shutdown secrets manager
+        self.secretsMgr.unload()
+
         # Gracefully exit debugger
         if self.debugger is not None:
             self.debugger.stop()
 
         sys.exit(exitCode)
-
-class ArgValidator:
-    @staticmethod
-    def parseDirPath(path):
-        if path == "" or Path(GetFullPath(path)).is_dir():
-            return path
-        else:
-            raise NotADirectoryError(path)
-                
-    @staticmethod
-    def parseFilePath(path):
-        if path == "" or Path(GetFullPath(path)).is_file():
-            return path
-        else:
-            raise FileNotFoundError(path)
             
 def main():
-    app = CLIApp("CLIApp", "CLIApp main function and simple demo.", version = "0.0.1")
+    app = CLIApp(
+        "CLIApp", 
+        "CLIApp main function and simple demo.", 
+        version = "0.0.1"
+    )
     app.run(CLIProgram(app.logMgr))
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
