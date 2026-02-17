@@ -1,15 +1,15 @@
-from gspread_formatting             import *
-from oauth2client.service_account   import ServiceAccountCredentials
-
 import pandas as pd
 import gspread
-import os
+
+from gspread_formatting             import *
+from oauth2client.service_account   import ServiceAccountCredentials
 
 # User packages
 from my_secrets     import secret
 
 # Local package
 from .format        import *
+from .results       import UpdateResults
 from .utilities     import *
 
 class Serializer:
@@ -42,14 +42,17 @@ class Serializer:
             self.logger.exception("Unable to get access to Google sheets.")
 
     def loadWorksheetFromGoogleDrive(self, url, sheetLabel):
-        try:
-            # Assume the spreadsheet exists and has a tab "Search"
-            self.sheet = self.gsheetsClient.open_by_url(url)
-            # Read the spreadsheet into a date frame. Assume there is a tab "Search" with all search results.
-            self.worksheet = self.sheet.worksheet(sheetLabel)
-            
-        except Exception as e:
-            self.logger.exception(f"Unable to load worksheet {sheetLabel} at {url}")
+        if self.gsheetsClient is not None:
+            try:
+                # Assume the spreadsheet exists and has a tab "Search"
+                self.sheet = self.gsheetsClient.open_by_url(url)
+                # Read the spreadsheet into a date frame. Assume there is a tab "Search" with all search results.
+                self.worksheet = self.sheet.worksheet(sheetLabel)
+                
+            except Exception as e:
+                self.logger.exception(f"Unable to load worksheet {sheetLabel} at {url}")
+        else:
+            self.logger.exception("Get load worksheet from Google drive as gsheet client is not initialized.")
 
     def isLoaded(self):
         return (self.gsheetsClient is not None 
@@ -106,14 +109,17 @@ class Serializer:
         dfJobsOnFile = None
     
         try:
-            # TODO: consider if the list gets too large for in-memory processing
-            recordsOnFile = self.worksheet.get_all_records()
-            if recordsOnFile != []:
-                dfJobsOnFile = pd.DataFrame(recordsOnFile)
+            if self.worksheet is not None:
+                # TODO: consider if the list gets too large for in-memory processing
+                recordsOnFile = self.worksheet.get_all_records()
+                if recordsOnFile != []:
+                    dfJobsOnFile = pd.DataFrame(recordsOnFile)
+                else:
+                    dfJobsOnFile = pd.DataFrame()
+            
+                self.logger.info("Records on file: {0}".format(dfJobsOnFile.shape[0]))
             else:
-                dfJobsOnFile = pd.DataFrame()
-        
-            self.logger.info("Records on file: {0}".format(dfJobsOnFile.shape[0]))
+                self.logger.error("Can't get jobs because worksheet is not initialized.")
         except Exception as e:
             self.logger.exception("Unable to load jobs search results from Google sheets.")
     
@@ -143,12 +149,14 @@ class Serializer:
     
         return dfJoined
 
-    def updateWorksheet(self, dfNewJobs):
-        success = False
+    def updateWorksheet(self, dfNewJobs) -> UpdateResults:
+        result = UpdateResults(False, 0, 0)
         
         if self.isLoaded():
             dfJobsOnFile = self.loadJobsFromWorksheet()
     
+            result.newJobs = dfNewJobs.shape[0]
+
             # Convert new jobs to proper date-time for panda frame
             if dfNewJobs is not None and dfNewJobs.shape[0] > 0:
                 dfNewJobs["posted_date"] = pd.to_datetime(dfNewJobs["posted_date"])
@@ -162,10 +170,12 @@ class Serializer:
             dfCombinedJobs = self.combineResults(dfJobsOnFile, dfNewJobs)
         
             # If able to load the worksheet
-            if dfJobsOnFile is not None and dfCombinedJobs is not None:
+            if dfJobsOnFile is not None and dfCombinedJobs is not None and self.worksheet is not None:
                 # Let's flag duplicates across search as opposed to removing them.
                 # This can provide insights on behavior of specific companies, linkedin, etc.
                 dfUniqueJobs = self.flagDuplicates(dfCombinedJobs)
+
+                result.uniqueJobs = dfUniqueJobs.shape[0]
         
                 # Final sort for user. 
                 # TODO: replace last field with keyword match score using Bert or another algorithm.
@@ -179,8 +189,8 @@ class Serializer:
                 outJobs = [dfUniqueJobs.columns.values.tolist()] + dfUniqueJobs.values.tolist()
                 self.worksheet.update(outJobs, value_input_option = "USER_ENTERED")
     
-                success = True
+                result.success = True
             else:
                 self.logger.error("Unable to update job search results and persist to sheets.")
     
-        return success
+        return result

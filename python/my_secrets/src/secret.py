@@ -7,7 +7,7 @@ class Secret:
 
     __slots__ = ("_value","_backendID",)
 
-    def __init__(self, secret: Optional[str], backendID: str):
+    def __init__(self, secret: Optional[str], backendID: str = "Ephemeral"):
 
         # Store the value in a *private* attribute; ``__slots__`` prevents accidental
         # creation of a __dict__ entry that could be inspected.
@@ -19,6 +19,9 @@ class Secret:
         return f"<SecretStr length={len(self._value)} hidden>"
     def __str__(self) -> str:  # pragma: no cover (identical to repr)
         return "<SECRET>"
+    
+    def isEmpty(self) -> bool:
+        return self._value == ""
     
     # User exposes the secret
     def expose(self) -> str:

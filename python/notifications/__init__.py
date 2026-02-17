@@ -5,4 +5,4 @@ from core import install
 
 install.InstallDependencies(os.path.abspath(os.path.dirname(__file__)))
 
-from .src import job_search, persist, results
+from .src import notification_mgr, email, sms

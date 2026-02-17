@@ -3,7 +3,7 @@ from pathlib import Path
 import sys
 
 # User packages
-from core import user_module, logs, install
+from core              import user_module, logs, install
 from my_secrets        import secrets_mgr
 
 # Local package

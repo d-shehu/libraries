@@ -1,11 +1,4 @@
-# Python std lib
-import pathlib
-import os
-import sys
-import time
-
-# 3P Packages
-from geopy.geocoders import Nominatim
+from dataclasses        import dataclass
 
 # Local packages
 from core               import user_module, logs
@@ -21,6 +14,14 @@ from .persist           import *
 from .queries           import *
 from .utilities         import *
 
+class JobStats:
+    totalJobs: int
+    newJobs: int
+
+    totalRecommendations: int
+    newRecommendations: int
+
+
 class JobSearch(user_module.UserModule):
     def __init__(self, 
                  progressTracker = progress_tracker.ProgressTrackerCLI(), 
@@ -32,11 +33,16 @@ class JobSearch(user_module.UserModule):
         self.authenticator   = None
         self.formatter       = Formatter(self.logger)
         self.progressTracker = progressTracker
+
         self.reset()
 
     def __del__(self):
         if self.scraper is not None:
             del self.scraper
+
+    @property
+    def stats(self) -> JobStats:
+        return self.__stats
 
     def getScraper(self):
         return self.scraper
@@ -46,9 +52,10 @@ class JobSearch(user_module.UserModule):
         if self.scraper is not None:
             del self.scraper
             
-        self.scraper       = web_scraper.WebScraper(logMgr = self.logMgr) # Instantiate new scraper object
-        self.authenticator = Authenticator(self.scraper, self.logger) # Since browser is reset we can reset authenticator
-
+        self.scraper        = web_scraper.WebScraper(logMgr = self.logMgr) # Instantiate new scraper object
+        self.authenticator  = Authenticator(self.scraper, self.logger) # Since browser is reset we can reset authenticator
+        self.__stats        = JobStats()
+        
         return (self.scraper is not None)
 
     def loadFeed(self):
@@ -140,7 +147,7 @@ class JobSearch(user_module.UserModule):
 
         return dfCurrJobs
 
-    def persistResults(self, gsheetSecret: secret.Secret, spreadsheetURL, sheetLabel, dfJobs):
+    def persistResults(self, gsheetSecret: secret.Secret, spreadsheetURL, sheetLabel, dfJobs) -> UpdateResults:
         serializer = Serializer(gsheetSecret, spreadsheetURL, sheetLabel, self.logger)
         return serializer.updateWorksheet(dfJobs)
 
