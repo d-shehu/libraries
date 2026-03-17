@@ -2,9 +2,11 @@ import math
 import sys
 import time
 
-from ipywidgets import FloatProgress, Label, HBox
+from ipywidgets         import FloatProgress, Label, HBox
+from IPython.display    import display
 
-from .filters import MovingAverage
+# This package
+from .filters           import MovingAverage
 
 class ProgressTracker:
     def __init__(self, minVal = 0, maxVal = 100, description = "Progress"):

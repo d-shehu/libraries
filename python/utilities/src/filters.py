@@ -16,7 +16,7 @@ class MovingAverage:
         self.cum     = 0
 
     def push_list(self, lstVal):
-        for val in listVal:
+        for val in lstVal:
             self.push(val)
         
     def push(self, newVal):
