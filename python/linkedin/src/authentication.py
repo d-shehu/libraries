@@ -1,5 +1,6 @@
 import getpass
 
+from abc                import ABC, abstractmethod
 from typing             import Optional
 
 # User packages
@@ -7,16 +8,32 @@ from my_secrets         import secret
 
 LOGIN_TIMEOUT = 3 # ~second timeout for each login attempt
 
+class PINChallenge(ABC):
+    @abstractmethod
+    def __call__(self) -> secret.Secret:
+        pass
+
+class PINChallengeCLI(PINChallenge):
+    def __call__(self) -> secret.Secret:
+        pin = getpass.getpass("Pin: ")
+        return secret.Secret(pin)
+
 class Authenticator:
     def __init__(self, scraper, logger):
         self.scraper       = scraper
         self.logger        = logger
         self.__reset()
 
+        # Fall back to CLI unless overriden
+        self.__handlePINChallenge: PINChallenge = PINChallengeCLI()
+
     def __reset(self):
         self.authenticated = False
         self.username: Optional[secret.Secret] = None
         self.password: Optional[secret.Secret] = None
+
+    def setPINChallenge(self, newHandler: PINChallenge):
+        self.__handlePINChallenge = newHandler
 
     def login(self, username: Optional[secret.Secret], password: Optional[secret.Secret]):
         if not self.authenticated:
@@ -88,9 +105,9 @@ class Authenticator:
         # If this screen loads otherwise suppress error as the challenge isn't always triggered.
         if self.scraper.waitForElementToLoadByID("email-pin-challenge"):
             self.logger.info("Linkedin requesting email pin.")
-            pin = getpass.getpass()
+            pin = self.__handlePINChallenge()
     
-            success = (self.scraper.setElementText("input__email_verification_pin", pin)
+            success = (self.scraper.setElementText("input__email_verification_pin", pin.expose())
                                     and self.scraper.clickOnElement("email-pin-submit-button"))
             if not success:
                 self.logger.error("Failed to verify with pin.")

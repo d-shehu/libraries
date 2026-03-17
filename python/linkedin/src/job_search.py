@@ -20,7 +20,7 @@ class JobStats:
 
     totalRecommendations: int
     newRecommendations: int
-
+    
 
 class JobSearch(user_module.UserModule):
     def __init__(self, 
