@@ -1,7 +1,7 @@
 from dataclasses                            import dataclass
 from enum                                   import Enum
 from langchain_chroma                       import Chroma
-from langchain.schema.document              import Document
+from langchain_core.documents               import Document
 from langchain_community.vectorstores.utils import filter_complex_metadata
 
 from pathlib                                import Path
@@ -9,7 +9,6 @@ from typing                                 import Dict, Generic, Iterator, List
 
 import json
 import shutil
-import uuid
 
 # User packages
 from core                                   import cache
@@ -233,6 +232,11 @@ class CollectionMgr:
     def __init__(self, saveDir: Path, embeddings: Embeddings):
         self.saveDir    = saveDir
         self.embeddings = embeddings
+
+        # Create save dir if it doesn't exist
+        self.saveDir.mkdir(mode=0o700, parents=False, exist_ok=True)
+
+        # Configure cache
         self.cache      = cache.Cache(CollectionMgr.Max_Collections_in_Memory,
                                       cache.CacheReplacementPolicy.LRU)
         

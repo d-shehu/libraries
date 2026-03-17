@@ -5,7 +5,7 @@ from itertools                  import chain
 from pathlib                    import Path
 from typing                     import Dict, Iterator, Iterable, List, Optional
 
-from langchain.schema.document  import Document
+from langchain_core.documents   import Document
 
 from langchain_community.document_loaders.parsers   import TesseractBlobParser
 

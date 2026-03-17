@@ -1,40 +1,99 @@
+from dataclasses    import dataclass
 from enum           import Enum
-from typing         import List, Optional
+from typing         import cast, List
 
-# User packages
+# Local packages
 from core           import logs
 
 # Aliases
 LogLine = logs.LogLine
 
+# Defines
+LLMParams_Option_Disabled              = -1
+
 class LLMClientType(Enum):
     OLLAMA = "OLLAMA"
     OPENAI = "OPENAI"
 
-class LLMInfo(Enum):
-    GPT4O       = {"id": 1, "name": "gpt-4o",    "tokenizer": "gpt-4o"}
-    COMMAND_R   = {"id": 2, "name": "command-r", "tokenizer": "CohereForAI/c4ai-command-r-v01"}
-    GEMMA2      = {"id": 4, "name": "gemma2",    "tokenizer": "google/gemma-2-2b-it"}
-    GEMMA3      = {"id": 3, "name": "gemma3",    "tokenizer": "google/gemma-3-1b-it"}
-    LLAMA31     = {"id": 5, "name": "llama3.1",  "tokenizer": "meta-llama/Llama-3.1-8B"}
-
-    def __str__(self):
-        return self.value["name"]
-
-    def __getitem__(self, key):
-        return self.value[key]
+# A few key parameters for tweaking LLM performance.
+@dataclass
+class LLMParams:
+    temperature: float      = 1.0
+    top_p:float             = 0.9
+    top_k:int               = 40
+    repeat_penalty:float    = 1.1
+    min_p:float             = LLMParams_Option_Disabled
+    repeat_penalty:float    = LLMParams_Option_Disabled
+    presence_penalty:float  = LLMParams_Option_Disabled
+    seed: int               = LLMParams_Option_Disabled
     
-def GetLLMInfofromName(name: str) -> LLMInfo:
-    for member in LLMInfo:
-        if member.value["name"] == name:
-            return member
-        
-    raise IndexError(f"Invalid LLMInfo name {name}")
+    # Setting all options through they may not be relavent for a specific model
+    # and especially for the deterministic mode.
+    def setConservative(self):
+        self = LLMParams()
+        self.temperature    = 0.1
+        self.top_p          = 0.9
+        self.top_k          = 20
+        self.repeat_penalty = 1.2
+
+    def setDeterministic(self):
+        self = LLMParams()
+        self.temperature    = 0.0
+        self.top_p          = 1
+        self.top_k          = 1
+        self.repeat_penalty = 1.2
+        self.seed           = 3457 # Hard-coded seed used to stabilize output for testing or if user prefer consistent results.
+
+@dataclass
+class LLMInfo:
+    name: str
+    tokenizer: str
+    context: int
+    params: LLMParams
+
+    @staticmethod
+    def GetDefaultsLLMInfo() -> List["LLMInfo"]:
+        return [
+            LLMInfo("gemma3",
+                    "google/gemma-3-1b-it",
+                    131072,
+                    LLMParams(
+                        temperature=1.0, 
+                        top_p=0.95, 
+                        top_k=64, 
+                        repeat_penalty=1.0, 
+                        min_p=0.01
+                    )),
+            LLMInfo("gpt-oss",
+                    "openai/gpt-oss-120b",
+                    131072,
+                    LLMParams(
+                        temperature=1.0,
+                        top_p=1.0,
+                        top_k=0
+                    )),
+            LLMInfo("llama3.2",
+                     "meta-llama/Llama-3.2-3B",
+                     131072,
+                     LLMParams(
+                        temperature=1.0, 
+                        top_p=0.9, 
+                        top_k=40, 
+                        repeat_penalty=1.1, 
+                        min_p=0.01
+                    ))
+        ]
 
 class LLMMessage:
     def __init__(self, role: str, content: str):
         self.role    = role
         self.content = content
+
+    def to_dict(self) -> dict[str, str]:
+        return {
+            "role":     self.role,
+            "content":  self.content
+        }
 
         
 class LLMResponseStatus(Enum):

@@ -1,6 +1,6 @@
 from abc                        import ABC, abstractmethod
 from dataclasses                import dataclass
-from langchain.schema.document  import Document
+from langchain_core.documents   import Document
 from langchain_text_splitters   import RecursiveCharacterTextSplitter
 from typing                     import Dict, Iterable, Iterator, List, Tuple
 

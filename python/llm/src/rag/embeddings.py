@@ -26,7 +26,11 @@ class RAGEmbeddings:
     lock: Lock = Lock()
 
     @staticmethod
-    def get(provider: EmbeddingsProvider, apiKey: str = "", url: str = "", model: str = "", cacheDir: Path = Path()) -> Embeddings:
+    def get(provider: EmbeddingsProvider, 
+            apiKey: str = "", 
+            url: str = "", 
+            model: str = "", 
+            cacheDir: Path = Path()) -> Embeddings:
         with RAGEmbeddings.lock:
             # If no model is passed try one of the defaults
             if model == "":
@@ -45,8 +49,8 @@ class RAGEmbeddings:
                 elif provider == EmbeddingsProvider.OpenAI:
                     # TODO: evaluate making secrets all SecretStr
                     RAGEmbeddings.Lookup[provider] = OpenAIEmbeddings(
-                        openai_api_key  = SecretStr(apiKey), 
-                        model           = model,
+                        api_key  = SecretStr(apiKey), 
+                        model    = model,
                     )
                 # Generic embeddings provided by Huggingface
                 elif provider == EmbeddingsProvider.Local:
