@@ -41,7 +41,7 @@ class WebScraper(user_module.UserModule):
         self.width           = width
         self.height          = height
         self.browser         = self.__getFirefoxBrowser(width, height)
-        self.original_window = self.browser.current_window_handle
+        self.original_window = self.browser.current_window_handle if self.browser is not None else None
         self.timeout         = timeout
         self.sleep           = sleep
 
@@ -196,13 +196,15 @@ class WebScraper(user_module.UserModule):
         return urlNew
         
     def waitForURLToChange(self, url, timeout=USE_DEFINED_TIMEOUT, suppressError = False):
-        success = False
+        success = (self.getCurrentPage() != url)
         
         try:
-            timeout = self.__getTimeout(timeout)
-            
-            WebDriverWait(self.browser, timeout).until(EC.url_changes(url))
-            success = True
+            # If page switch happened faster than expected
+            if not success:
+                timeout = self.__getTimeout(timeout)
+                WebDriverWait(self.browser, timeout).until(EC.url_changes(url))
+                success = True
+
         except Exception as e:
             if not suppressError:
                 self.logger.exception("Timed out while waiting for page to load new url.")
