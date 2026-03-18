@@ -1,6 +1,6 @@
 from dotenv         import dotenv_values, set_key
 from pathlib        import Path
-from typing         import TypeVar
+from typing         import Optional, TypeVar
 
 import os
 
@@ -65,7 +65,7 @@ class CLIContext:
         value: T = defaultValue
 
         config = self.getEnvVariable(key, defaultValue)
-        if value is not None:
+        if config is not None:
             value = type(defaultValue)(config)
 
         return value

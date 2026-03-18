@@ -1,7 +1,7 @@
 from pathlib        import Path
 from queue          import PriorityQueue
-from threading      import Event, Lock, Thread, Timer
-from typing         import List, Optional, TypeAlias
+from threading      import Event, Lock, Thread
+from typing         import List, Optional, Tuple, TypeAlias
 
 import json
 import os
@@ -10,6 +10,7 @@ import tempfile
 
 # Local packages
 from core           import cache
+from utilities      import background_task
 
 # Local files
 from .requests      import *
@@ -20,7 +21,8 @@ AUTO_SAVE_INTERVAL  = 15 * 60
 # TODO: set higher after testing
 MAX_CACHED_REQUEST: int = 10
 
-RequestPriorityQueue: TypeAlias = PriorityQueue[Optional[tuple[Priority, uuid.UUID]]]
+HaltRequest = (Priority.P1_Critical, uuid.UUID(""))
+RequestPriorityQueue: TypeAlias = PriorityQueue[Tuple[Priority, uuid.UUID]]
 
 class RequestCache(cache.Cache[uuid.UUID, Request]):
 
@@ -79,7 +81,9 @@ class RequestCache(cache.Cache[uuid.UUID, Request]):
         self.setFetchHandler(RequestCache.RequestFetchHandler(processingDir, logger))
         self.setEvictHandler(RequestCache.RequestEvictHandler(processingDir, logger))
     
-class Processor:
+class Processor(background_task.BackgroundTask):
+    DEFAULT_MAINTENANCE_INTERVAL_SECS = 60
+
     def __init__(self, processingDir: Path, logger):
         self._thread: Optional[Thread]          = None
 
@@ -96,9 +100,8 @@ class Processor:
         self._isRunning     = Event()
         self._isRunning.set()
 
-        # Autosave and other maint. periodically in case service dies
-        self._maintTimer        = Timer(60, self._doMaintenance)
-        self._maintTimer.name   = "Processor_Maint_Timer"
+        self._maintRunner   = background_task.BackgroundRunner(self, 
+                                                               Processor.DEFAULT_MAINTENANCE_INTERVAL_SECS)
     
     # Throws exception if unable to load request
     def _load(self) -> bool:
@@ -122,13 +125,11 @@ class Processor:
         except Exception as e:
             self.logger.exception("Unable to load requests from file.")
                 
-
         return success
 
-    # Allow periodic writing of requests to file to minimize risk of losing data records
-    def _store(self) -> bool:
-        success = False
-
+    def doTask(self):
+        # Allow periodic writing of requests to file to minimize risk of losing data records
+        
         # Persist any changes to local cache
         lsRequestsPersist = []
         dict = self.cache.acquireDict()
@@ -140,27 +141,20 @@ class Processor:
                     lsRequestsPersist.append(request)
         self.cache.releaseDict()
         
-        try:
-            # Store records not yet processed here
-            tempPath = ""
-            with tempfile.NamedTemporaryFile("w", dir = self.processingDir, delete = False) as tmpFile:
-                tmpFile.write(json.dumps(lsRequestsPersist, cls = RequestEncoder))
-                tmpFile.flush()
-                os.fsync(tmpFile.fileno())
-                tempPath = tmpFile.name
+        # Store records not yet processed here
+        tempPath = ""
+        with tempfile.NamedTemporaryFile("w", dir = self.processingDir, delete = False) as tmpFile:
+            tmpFile.write(json.dumps(lsRequestsPersist, cls = RequestEncoder))
+            tmpFile.flush()
+            os.fsync(tmpFile.fileno())
+            tempPath = tmpFile.name
 
-            # If succeeded then copy to processing
-            if Path(tempPath).is_file():
-                shutil.move(tempPath, Path(self.processingDir, REQUESTS_FILE))
-                success=True
-        except Exception as e:
-            self.logger.exception("Unable to persist outstanding requests.")
+        # If succeeded then copy to processing
+        if Path(tempPath).is_file():
+            shutil.move(tempPath, Path(self.processingDir, REQUESTS_FILE))
 
-
-        return success
-    
-    def _doMaintenance(self):
-        self._store()
+    def onTaskException(self, exception: Exception):
+        self.logger.exception("Unable to persist outstanding requests.")
 
     def getPendingRequests(self) -> List[Request]:
         lsRequests:List[Request] = []
@@ -182,32 +176,34 @@ class Processor:
         return lsRequests
 
     def start(self):
-        self._thread = Thread(name = "Processor_Thread", target = self._run, daemon = True)
+        # Daemon thread to prevent app exit from killing thread before it's done processing current work.
+        self._thread = Thread(name = "Processor_Thread", target = self._run, daemon = True) 
         self._thread.start()
-        self._maintTimer.start()
 
-    def wait(self):
-        if self._thread is not None:
-            self._thread.join()  # Wait for server to exit
-
-        if self._maintTimer is not None:
-            self._maintTimer.cancel()
-            self._maintTimer.join() # Wait for timer to exit
+        # Autosave and other maint. periodically in case service dies
+        if self._maintRunner is not None:
+            self._maintRunner.start()
 
     def stop(self):
         self._isRunning.clear()
-        self.priorityQueue.put(None)
-        self.wait()
-        self._store()
+        self.priorityQueue.put(HaltRequest)
 
+        # Wait for threads to terminate
+        if self._thread is not None:
+            self._thread.join()  # Wait for server to exit
+
+        # Stop auto-save
+        if self._maintRunner is not None:
+            self._maintRunner.stop()
+    
     def _processRequest(self, request: Request) -> Status:
         raise NotImplementedError("Must define _processRequest for your 'Processor' subclass.")
 
     def _run(self):
         while self._isRunning.is_set():
-            reqPair: Optional[tuple[Priority, uuid.UUID]] = self.priorityQueue.get()
+            reqPair: Tuple[Priority, uuid.UUID] = self.priorityQueue.get()
 
-            if reqPair is not None:
+            if reqPair != HaltRequest:
                 # Get from cache
                 request = self.cache.get(reqPair[1])
                 if request:
@@ -224,8 +220,7 @@ class Processor:
                     self.logger.exceptionf(f"Unable to read request with id {reqPair[1]} from priority queue")
 
             else:
-                self.logger.warning("""PriorityQueue received a null request. 
-                                       Assuming user requested program to exit.""")
+                self.logger.warning("Received halt request. Assuming user requested program to exit.")
             
     def enqueue(self, request: Request) -> bool:
         success = False

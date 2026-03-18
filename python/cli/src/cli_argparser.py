@@ -21,18 +21,25 @@ class CLIAppArgParser(argparse.ArgumentParser):
         
         # Print the message (usually usage/help), but do not exit
         if self.builtInErrorHandling:
-            super().exit(status, message)
-            
+            super().exit(status, message)  
         # ... handle subparser and other errors explicitly rather than always exiting.
+        elif status != 0 or message is not None:
+            raise CLIAppParserExit(f"CLIAppArgParser tried to exit with status: {status} and message: {message}")
         else:
-            raise CLIAppParserExit(f"CLIAppArgParser tried to exit: {message}")
+            raise CLIAppParserExitNoError("CLIAppArgParser exited but with no errors likely due to help/usage.")
 
 
     def parse_args(self, args = None, namespace = None):
+        parseResult = None
+
         try:
-            return super().parse_args(args, namespace)
+            parseResult = super().parse_args(args, namespace)
+        except CLIAppParserExitNoError as e:
+            parseResult = None
         except SystemExit as e:
             self.print_usage()
+
+        return parseResult
         
     def setBuiltInErrorHandling(self, enabled):
         self.builtInErrorHandling = enabled
@@ -43,4 +50,7 @@ class CLIAppArgumentError(Exception):
     pass
 
 class CLIAppParserExit(Exception):
+    pass
+
+class CLIAppParserExitNoError(Exception):
     pass

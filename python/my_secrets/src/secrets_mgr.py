@@ -40,6 +40,9 @@ class SecretsMgr(user_module.UserModule):
         self.secretsPath = secretsPath
         self.backends: List[Backend] = []
 
+    def __del__(self):
+        self.unload()
+
     # Use .env for services or deployments where keyring is not available.
     # Assume this .env is appropriately restricted via permissions.
     def loadFromEnv(self, envPath: Path) -> bool:

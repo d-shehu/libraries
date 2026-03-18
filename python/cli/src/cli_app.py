@@ -1,35 +1,57 @@
 import os
-from pathlib import Path
 import sys
 
+from pathlib            import Path
+
 # User packages
-from core              import user_module, logs, install
-from my_secrets        import secrets_mgr
+from core               import user_module, logs, install
+from my_secrets         import secrets_mgr
 
 # Local package
-from .cli_context      import *
-from .cli_program      import *
-from .cli_program_mode import *
-from .cli_argparser    import *
-from .cli_utilities    import *
+from .cli_cmd_history   import CLICmdHistory
+from .cli_context       import *
+from .cli_program       import *
+from .cli_program_mode  import *
+from .cli_argparser     import *
+from .cli_utilities     import *
 
-from .cli_debug        import *
+from .cli_debug         import *
 
 class ArgValidator:
-    @staticmethod
-    def parseDirPath(path):
+    # If path is not empty the directory or file must exist.
+    def __init__(self, mustExist: bool):
+        self.mustExist = mustExist
+
+    def parseDirPath(self, path: str):
         if path == "" or Path(GetFullPath(path)).is_dir():
             return path
-        else:
+        elif self.mustExist:
             raise NotADirectoryError(path)
+        else:
+            return path
                 
-    @staticmethod
-    def parseFilePath(path):
+    def parseFilePath(self, path: str):
         if path == "" or Path(GetFullPath(path)).is_file():
             return path
-        else:
+        elif self.mustExist:
             raise FileNotFoundError(path)
+        else:
+            return path
+        
+class IntArgValidator:
+    def __init__(self, minVal: int = -sys.maxsize, maxVal: int = -sys.maxsize):
+        self.minVal = minVal
+        self.maxVal = maxVal
 
+    def parseInt(self, val: str):
+        intVal = int(val)
+        if intVal < self.minVal:
+            raise ValueError(f"Value {intVal} is less than min {self.minVal}  allowed")
+        elif intVal > self.maxVal:
+            raise ValueError(f"Value {intVal} is greater than max {self.maxVal}  allowed")
+        
+        return intVal
+        
 class CLIApp(user_module.UserModule):
     def __init__(self, 
                  appName: str, 
@@ -58,6 +80,7 @@ class CLIApp(user_module.UserModule):
         self.additionalInfo = additionalInfo
         
         self.debugger       = None
+        self.cmdHistory: Optional[CLICmdHistory] =  None
 
         self.argParser = argparse.ArgumentParser(prog          = self.appName,
                                                  description   = self.description,
@@ -65,9 +88,15 @@ class CLIApp(user_module.UserModule):
 
         self.configureArguments()
 
+        self.commandPrompt = f"{self.appName}: "
+
     # Override default usage from argparser
-    def setUsage(self, appUsage):
+    def setUsage(self, appUsage: str):
         self.argParser.usage = appUsage
+
+    # Override prompt text if desired
+    def setCommandPrompt(self, prompt: str):
+        self.commandPrompt = prompt
 
     def configureArguments(self):
         self.argParser.add_argument("-m", "--mode",             type     = str, 
@@ -75,7 +104,7 @@ class CLIApp(user_module.UserModule):
                                                                 choices  = ["interactive", "command", "service"],
                                                                 default  = "command")
         
-        self.argParser.add_argument("-e", "--environment-file", type     = ArgValidator.parseFilePath,
+        self.argParser.add_argument("-e", "--environment-file", type     = ArgValidator(True).parseFilePath,
                                                                 help     = "Path to .env file.",
                                                                 default  = "")
         
@@ -86,7 +115,7 @@ class CLIApp(user_module.UserModule):
                                                                               WARNING, ERROR, CRITICAL.""",
                                                                 default  = "")
         
-        self.argParser.add_argument(      "--log-dir",          type     = ArgValidator.parseDirPath,
+        self.argParser.add_argument(      "--log-dir",          type     = ArgValidator(True).parseDirPath,
                                                                 help     = """Path to directory that holds logs. 
                                                                               If not specified then logging will be to console only.""",
                                                                 default  = "")
@@ -97,14 +126,28 @@ class CLIApp(user_module.UserModule):
                                                                 help     = "Enable debug mode and logging. Defaults to false.",
                                                                 default  = False)
         
+        self.argParser.add_argument(      "--hist-file",        type     = ArgValidator(False).parseFilePath, 
+                                                                help     = "Path to file which stores history of commands.",
+                                                                default  = "")
+        
+        self.argParser.add_argument(      "--hist-len",         type     = IntArgValidator(0).parseInt, 
+                                                                help     = """Max number of commands to remember. Default is 1000
+                                                                              and 0 disables it.""",
+                                                                default  = 1000)
+        
+        self.argParser.add_argument(      "--hst-save-ival",    type     = IntArgValidator(0).parseInt, 
+                                                                help     = """Max number of commands to remember. Default is 1000
+                                                                              and 0 disables it.""",
+                                                                default  = 30)
+        
         # Select either dotenv (services) or keyring
         secretsGroup = self.argParser.add_mutually_exclusive_group(required=False)
 
-        secretsGroup.add_argument(      "--secrets-file",       type     = ArgValidator.parseFilePath,
+        secretsGroup.add_argument(      "--secrets-file",       type     = ArgValidator(True).parseFilePath,
                                                                 help     = "Path to secrets file with API keys, passwords, etc.",
                                                                 default  = "")
 
-        secretsGroup.add_argument(      "--keyring",            type     = ArgValidator.parseFilePath,
+        secretsGroup.add_argument(      "--keyring",            type     = ArgValidator(True).parseFilePath,
                                                                 dest     = "use_keyring",
                                                                 help     = "Use keyring python package and corresponding backend for desktop apps.",
                                                                 default  = "")
@@ -150,7 +193,7 @@ class CLIApp(user_module.UserModule):
                 # Debugging flag
                 self.isDebugMode = args.debug
                 if not self.isDebugMode:
-                    self.logMgr.suppressLogger("DEBUG") # Disable logging    
+                    self.logMgr.suppressLogger("DEBUG") # Disable logging
 
                 # Start logging after we've initialized
                 self.logger.debug(f"Sys args: {sys.argv}")
@@ -170,6 +213,16 @@ class CLIApp(user_module.UserModule):
                 if self.envFilepath != "":
                     self.context.configureEnvVariables(os.path.expanduser(self.envFilepath))
                 self.logger.debug(f"Env filepath: {self.envFilepath}")
+
+                # Command history
+                if args.hist_file != "":
+                    self.cmdHistory = CLICmdHistory(Path(args.hist_file), 
+                                                    self.logger, 
+                                                    args.hist_len,
+                                                    args.hst_save_ival)
+                    self.cmdHistory.load()
+                    self.logger.debug(f"Command history enabled.")
+                    self.logger.debug("Command history filepath: {self.cmdHistoryFilepath}")
 
                 # Secrets which also utilizes .env format
                 self.secretsFilepath = args.secrets_file
@@ -221,29 +274,32 @@ class CLIApp(user_module.UserModule):
             
         return self.context.mode
      
-    def run(self, program):
+    def run(self, program: CLIProgram):
         exitCode = os.EX_USAGE    
 
         if program is not None:
             # If running in interactive mode create a new parser
             pgmParser = self.argParser 
             if self.getModeFromArgv() == CLIProgramMode.Interactive:
-                pgmParser = CLIAppArgParser("Enter command:")
-            program.initParser(pgmParser, self.context, self.secretsMgr)
+                pgmParser = CLIAppArgParser(self.commandPrompt)
 
              # Parse env variables and configuration to successfully run program.
             parsedArgs = self.parseArguments()
 
+            program.initParser(pgmParser, self.context, self.secretsMgr, self.cmdHistory)
+
             # For convenience, intercept and write out requirements.txt for 
             if parsedArgs is not None and parsedArgs.install_deps:
                 status = self.writeDeps(os.getcwd(), True, False) and program.writeDeps(os.getcwd(), True)
+                if not status:
+                    self.logger.error("Unable to write requirements.txt derived from user packages.")
 
             # Execute either as command, interactive program or (background) service
             if parsedArgs is not None and program.configure():
                 try:
                     if self.context.mode == CLIProgramMode.Interactive:
                         self.logger.info(f"Running {self.appName} in interactive mode.")
-                        exitCode = program.runInteractive()
+                        exitCode = program.runInteractive(self.commandPrompt)
                     elif self.context.mode == CLIProgramMode.Service:
                         self.logger.info(f"Running {self.appName} as a service.")
                         exitCode = program.runService()
@@ -266,8 +322,13 @@ class CLIApp(user_module.UserModule):
         else:
             self.logger.error("CLIApp must be given a valid program to run.")
 
+        # Shut down cmd history and it's thread
+        if self.cmdHistory is not None:
+            self.cmdHistory.unload()
+
         # Gracefull shutdown secrets manager
-        self.secretsMgr.unload()
+        if self.secretsMgr is not None:
+            self.secretsMgr.unload()
 
         # Gracefully exit debugger
         if self.debugger is not None:

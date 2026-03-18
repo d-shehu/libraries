@@ -1,33 +1,44 @@
 import argparse
-from enum import Enum
 import inspect
 import os
+import readline
 import shlex
 import sys
-from typing import Dict, get_type_hints, Optional
+
+from enum               import Enum
+from typing             import Dict, Optional, List, get_args, get_origin
 
 # User packages
-from core              import user_module
-from my_secrets        import secrets_mgr 
+from core               import user_module
+from my_secrets         import secrets_mgr 
 
 # Local package
-from .cli_context      import *
-from .cli_argparser    import *
+from .cli_argparser     import *
+from .cli_cmd_history   import CLICmdHistory
+from .cli_context       import *
 
 class CLIProgram(user_module.UserModule):
     def __init__(self, appLogMgr):
         super().__init__(appLogMgr)
 
-        self.isDone      = False
-        self.cmdParser   = None
+        self.isDone         = False
+        self.cmdParser      = None
+
         self.cmdHandlers:   Dict[str, CLICommand]   = {}
         self.context:       Optional[CLIContext]    = None
         self.secretMgr:     Optional[secrets_mgr.SecretsMgr] = None
+        self.cmdHistory:    Optional[CLICmdHistory] = None
 
-    def initParser(self, argParser, context: CLIContext, secretsMgr: secrets_mgr.SecretsMgr):
+    def initParser(self, argParser, context: CLIContext, secretsMgr: secrets_mgr.SecretsMgr, cmdHistory: Optional[CLICmdHistory]):
+        self.argParser  = argParser
         self.context    = context
         self.secretMgr  = secretsMgr
-        self.argParser  = argParser
+
+        # Optional
+        self.cmdHistory = cmdHistory
+        
+        # Handle interactive commands using sub parser from arg parser class. The interface is a bit
+        # clumsy but avoid a lot of duplicate / reimplementation of the work done in arg parser.
         self.cmdParser  = self.argParser.add_subparsers(dest = "command", help = "Interactive command help") 
 
         # Declare handlers. This can be overriden in subclass.
@@ -41,7 +52,8 @@ class CLIProgram(user_module.UserModule):
     def defineHandlers(self):
         self.cmdHandlers = {
             "help":  CLICommand(self.cmdParser, "help",  self.handleHelp,  "Print usage information."),
-            "usage": CLICommand(self.cmdParser, "usage", self.handleUsage, "Print help information.")
+            "usage": CLICommand(self.cmdParser, "usage", self.handleUsage, "Print help information."),
+            "clear": CLICommand(self.cmdParser, name="clear", funHandler=self.handleClear, helpStr="Clear console.")
         }
 
         if self.context is not None and self.context.mode == CLIProgramMode.Interactive:
@@ -82,25 +94,27 @@ class CLIProgram(user_module.UserModule):
 
         return success
             
-    def runInteractive(self):
+    def runInteractive(self, commandPrompt: str):
         exitCode = os.EX_OK
         
         while not self.isDone and exitCode == os.EX_OK:
             parsedArgs = None
             
             try:
-                userInput = input("Enter command: ")
-                # TOOD: remove when vscode is patched
-                # Ugly hack for vscode issue
+                userInput = input(commandPrompt)
+
+                # TOOD: remove ugly workaround "source /home" when vscode is patched.
+                # Seems to be caused by bug when remote debugging container
                 if not userInput.startswith("source /home"):
+                    if self.cmdHistory is not None:
+                        self.cmdHistory.add(userInput)
+                
                     parsedArgs = self.argParser.parse_args(shlex.split(userInput)) 
                 
                     # Keep running until user exits
-                    if self.runCommand(parsedArgs) != os.EX_OK and parsedArgs is not None:
+                    if parsedArgs is not None and self.runCommand(parsedArgs) != os.EX_OK:
                         self.logger.debug(f"Failed to run command: {parsedArgs}")
                         self.argParser
-                else:
-                    self.logger.error("Discarding bogus input from stdin")
                     
             # Intercept but don't exit for malformed arguments in interactive mode
             except (argparse.ArgumentError, CLIAppArgumentError, CLIAppParserExit) as e:
@@ -150,6 +164,11 @@ class CLIProgram(user_module.UserModule):
     def handleUsage(self) -> bool:
         self.argParser.print_usage()
         return True
+    
+    def handleClear(self) -> bool:
+        # Clear screen with ANSI codes
+        print("\033[H\033[J", end="")
+        return True
         
     def handleQuit(self) -> bool:
         self.isDone = True
@@ -180,6 +199,12 @@ class CLICommand:
         if self.inferArgs:
             self.__deriveArgs()
 
+    @staticmethod
+    def __parseList(strList: str) -> List[str]:
+        lsOut = strList.split(",")
+
+        return [item.strip() for item in lsOut]
+
     # Try to derive automatically from function sig
     def __deriveArgs(self):
         try:
@@ -192,10 +217,12 @@ class CLICommand:
 
     def __addArgument(self, name, argKind, argType, defaultVal):
         action  = None
-        
+        help    = None
+
         # Fallback to string if type not specified
         if argType == inspect._empty:
             argType = str
+        # Treat bool as a kind of enum
         elif argType == bool:
             action = CreateEnumAction(CLICommandBoolArg)
             argType = str
@@ -203,11 +230,21 @@ class CLICommand:
         elif isinstance(argType, type(Enum)):
             action = CreateEnumAction(argType)
             argType = str
+        else:
+            origin = get_origin(argType)
+            if origin is list:
+                listElems = get_args(argType)
+                if len(listElems) > 0 and listElems[0] is str:
+                    argType = CLICommand.__parseList
+                    help = f"--{name} 'First[,Second...]'"
+                else:
+                    raise ValueError("Only string lists are supported for argument parsing.")
 
         params = {
-            "type":    argType,
-            "action":  action,
-            "default": None
+            "type":     argType,
+            "action":   action,
+            "help":     help,
+            "default":  None,
         }
         
         # If there's no default value it's required by the python function.
@@ -245,9 +282,7 @@ class CLICommand:
                 # Fetch value for argument from parsed arguments and
                 # append to param list. 
                 argValue = getattr(parsedArgs, name)
-                if type(argValue) is list:
-                    paramList.extend(argValue)
-                elif isinstance(argValue, CLICommandBoolArg):
+                if isinstance(argValue, CLICommandBoolArg):
                     paramList.append(
                         (argValue == CLICommandBoolArg.TRUE) if True else False
                     )
