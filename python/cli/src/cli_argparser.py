@@ -1,13 +1,30 @@
 import argparse
+import readline
+
+# This package
+from .cli_auto_complete     import CLIAutoComplete, CLIAutoCompleteDisplayHook
 
 # Based on limited research there doesn't seem to be a way to cleanly intercept errors
 # in argparser to customize handling. For example, when should the program print an
 # error like "wrong command" vs exiting because arguments are clearly bogus/mallformed.
 class CLIAppArgParser(argparse.ArgumentParser):
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
         self.setBuiltInErrorHandling(False)
+
+    def initAutoComplete(self, subparser):
+        # Remove hyphen from completer delim since hyphen are part of the option.
+        delims = readline.get_completer_delims()
+        newDelims = delims.replace('-', '')
+        readline.set_completer_delims(newDelims)
+
+        # Use custom CLIAutoComplete to handle command completion
+        autocompleter = CLIAutoComplete(subparser)
+        readline.set_completer(autocompleter)
+        readline.set_completion_display_matches_hook(CLIAutoCompleteDisplayHook(autocompleter))
+        readline.parse_and_bind('tab: complete')
     
     def error(self, message):
         # Retain error handling for application arguments but ...
@@ -28,7 +45,7 @@ class CLIAppArgParser(argparse.ArgumentParser):
         else:
             raise CLIAppParserExitNoError("CLIAppArgParser exited but with no errors likely due to help/usage.")
 
-
+    
     def parse_args(self, args = None, namespace = None):
         parseResult = None
 
@@ -45,7 +62,7 @@ class CLIAppArgParser(argparse.ArgumentParser):
         self.builtInErrorHandling = enabled
         self.exit_on_error = enabled
 
-
+    
 class CLIAppArgumentError(Exception):
     pass
 

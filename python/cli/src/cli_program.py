@@ -43,6 +43,9 @@ class CLIProgram(user_module.UserModule):
 
         # Declare handlers. This can be overriden in subclass.
         self.defineHandlers()
+
+        # Initialize auto-complete
+        self.argParser.initAutoComplete(self.cmdParser)
         
     def configure(self) -> bool:
         self.logger.warning("Recommend overriding configure to further initialize your program based on given context.")
