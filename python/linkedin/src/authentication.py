@@ -66,7 +66,7 @@ class Authenticator:
         pageLoaded = False
         
         try:
-            self.scraper.loadPage("https://www.linkedin.com/login")
+            self.scraper.loadPage("https://www.linkedin.com/checkpoint/lg/sign-in-another-account")
             pageLoaded = self.scraper.waitForElementToLoad("username")
         except Exception as e:
             self.logger.exception("Unable to find field 'username' field in login page.")
