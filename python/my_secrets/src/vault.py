@@ -82,7 +82,7 @@ class Vault(Backend):
                 raise Exception(f"Unable to read '{key}' from '{path}' because hvac client is not initialized.")
         except HVACExceptions.InvalidPath:
             raise Exception(f"Unable to read '{key}' from '{path}' due to bad path")
-        except Exception:
+        except Exception as e:
             raise Exception(f"Unable to read '{key}' from '{path}' due to unexpected exception")
 
         return secretVal
@@ -203,17 +203,17 @@ class Vault(Backend):
                     ttl = int(tokenLookup["ttl"])
 
                     # If it's clone enough to expiring renew just to be safe
-                    if ttl < (self.checkIntervalSecs + Vault.DEFAULT_SAFETY_MARGING_SECS):
+                    if ttl < (self.checkIntervalSecs + Vault.DEFAULT_SAFETY_MARGING_SECS + self.checkIntervalSecs):
                         response = self.client.auth.token.renew_self(self.checkIntervalSecs + Vault.DEFAULT_SAFETY_MARGING_SECS)
                         ttl = response["auth"]["lease_duration"]
 
                     # Calculate elapsed time since last rotation
-                    lastRotation = tokenLookup["creation_time"]
+                    lastRotation = int(tokenLookup["creation_time"])
                     now = int(datetime.now(UTC).timestamp())
-                    remainingTime = seconds=now - lastRotation
+                    timeSinceRotation = now - lastRotation
 
                     # Rotate if it's nearly time
-                    if remainingTime < (self.rotationIntervalSecs + Vault.DEFAULT_SAFETY_MARGING_SECS):
+                    if timeSinceRotation >= (self.rotationIntervalSecs + Vault.DEFAULT_SAFETY_MARGING_SECS  + self.checkIntervalSecs):
                         newTokenResponse = self.client.auth.token.create_orphan(
                             policies=["job-search"],
                             ttl=self.rotationIntervalSecs + Vault.DEFAULT_SAFETY_MARGING_SECS,
