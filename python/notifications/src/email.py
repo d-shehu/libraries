@@ -1,6 +1,5 @@
 import aiosmtplib
 import mimetypes
-import re
 import ssl
 
 from datetime           import datetime, timezone
@@ -10,6 +9,7 @@ from typing             import List, Optional
 
 # Local packages
 from my_secrets         import secret
+from utilities          import validators
 
 # Import from this packages
 from .notification      import Notification, NotificationContact, NotificationType
@@ -65,11 +65,11 @@ class EmailAttachment:
         self._fileData = value
 
 class EmailAddress(NotificationContact):
-    ValidEmailRegex = r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,7}"
     def __init__(self, emailAddress: str):
         self.emailAddress = ""
+        
         # Quick check that this is a valid email
-        if not re.fullmatch(EmailAddress.ValidEmailRegex, emailAddress):
+        if not validators.Validator.IsValidEmailAddress(emailAddress):
             raise ValueError(f"Invalid email {emailAddress}")
         else:
             self.emailAddress = emailAddress

@@ -102,7 +102,7 @@ class NotificationRenderer:
             subject="[{app}] ⚠️ Warning – {summary}",
             short="⚠️ Warning: {message}",
             body="""\
-                Dear {recepient},
+                Dear {recipient},
 
                 [{type}]
                 Summary : {summary}
@@ -136,7 +136,7 @@ class NotificationRenderer:
             subject="[{app}] ❌ Error – {summary}",
             short="❌ Error: {message}",
             body="""\
-                Attn {recepient},
+                Attn {recipient},
 
                 {message}
 
@@ -167,7 +167,7 @@ class NotificationRenderer:
             subject="[{app}] 🚨 CRITICAL – {summary}",
             short="🚨 CRITICAL: {message}",
             body="""\
-                Attn {recepient},
+                Attn {recipient},
 
                 {message}
 
