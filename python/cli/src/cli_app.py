@@ -99,7 +99,7 @@ class CLIApp(user_module.UserModule):
         self.commandPrompt = prompt
 
     def configureArguments(self):
-        self.argParser.add_argument("-m", "--mode",             type     = str, 
+        self.argParser.add_argument("-M", "--mode",             type     = str, 
                                                                 help     = "Run application in interactive mode with user input.",
                                                                 choices  = ["interactive", "command", "service"],
                                                                 default  = "command")
@@ -190,6 +190,10 @@ class CLIApp(user_module.UserModule):
                 logsDir = args.log_dir
                 if logsDir != "":
                     self.logMgr = logs.ConfigureDefaultLogging(self.appName + "_Logger", args.log_dir)
+                
+                # TODO: cleanup app info
+                self.logger.info(f"App: {self.appName} v{self.version}")
+
                 # Debugging flag
                 self.isDebugMode = args.debug
                 if not self.isDebugMode:
@@ -263,7 +267,7 @@ class CLIApp(user_module.UserModule):
         modes = [m.value for m in CLIProgramMode]
         for index in range(0, len(sys.argv)-1):
             curr = sys.argv[index].lower()
-            if curr == "-m" or curr == "--mode":
+            if curr == "-M" or curr == "--mode":
                 mode = sys.argv[index+1].lower()
                 if mode in modes:
                     self.context.mode = CLIProgramMode(mode)
@@ -279,14 +283,16 @@ class CLIApp(user_module.UserModule):
 
         if program is not None:
             # If running in interactive mode create a new parser
-            pgmParser = self.argParser 
-            if self.getModeFromArgv() == CLIProgramMode.Interactive:
-                pgmParser = CLIAppArgParser(self.commandPrompt)
+            isInteractive = (self.getModeFromArgv() == CLIProgramMode.Interactive)
+            program.doInit(CLIAppArgParser(self.commandPrompt) if isInteractive else self.argParser, 
+                           self.context, 
+                           self.secretsMgr)
 
              # Parse env variables and configuration to successfully run program.
             parsedArgs = self.parseArguments()
-
-            program.initParser(pgmParser, self.context, self.secretsMgr, self.cmdHistory)
+            
+            if isInteractive:
+                program.doInteractive(self.cmdHistory)
 
             # For convenience, intercept and write out requirements.txt for 
             if parsedArgs is not None and parsedArgs.install_deps:

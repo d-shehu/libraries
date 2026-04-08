@@ -29,23 +29,23 @@ class CLIProgram(user_module.UserModule):
         self.secretMgr:     Optional[secrets_mgr.SecretsMgr] = None
         self.cmdHistory:    Optional[CLICmdHistory] = None
 
-    def initParser(self, argParser, context: CLIContext, secretsMgr: secrets_mgr.SecretsMgr, cmdHistory: Optional[CLICmdHistory]):
+    def doInit(self, argParser, context: CLIContext, secretsMgr: secrets_mgr.SecretsMgr):
         self.argParser  = argParser
         self.context    = context
         self.secretMgr  = secretsMgr
 
-        # Optional
-        self.cmdHistory = cmdHistory
-        
         # Handle interactive commands using sub parser from arg parser class. The interface is a bit
         # clumsy but avoid a lot of duplicate / reimplementation of the work done in arg parser.
         self.cmdParser  = self.argParser.add_subparsers(dest = "command", help = "Interactive command help") 
 
-        # Declare handlers. This can be overriden in subclass.
-        self.defineHandlers()
+        self.defineHandlers() # Declare handlers. This can be overriden in subclass.
 
-        # Initialize auto-complete
-        self.argParser.initAutoComplete(self.cmdParser)
+
+    def doInteractive(self, cmdHistory: Optional[CLICmdHistory]):
+        self.cmdHistory = cmdHistory
+        self.argParser.initAutoComplete(self.cmdParser)     # Initialize auto-complete
+
+        
         
     def configure(self) -> bool:
         self.logger.warning("Recommend overriding configure to further initialize your program based on given context.")
