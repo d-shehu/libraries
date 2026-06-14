@@ -67,6 +67,7 @@ class LogFormatterTxt(logging.Formatter):
         # Piggyback on parent class
         super().__init__(fmt = logFormat, datefmt = dateFormat, style = "%")
         
+    @staticmethod
     def getFieldFormat(field, fieldWidth) -> str:
         formattedField = ""
         if fieldWidth == NOT_FIXED_WIDTH:

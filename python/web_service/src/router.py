@@ -13,6 +13,8 @@ class ServiceRouter(ABC):
         self.context        = context
         self.api            = APIRouter()
         self.oath2Scheme    = OAuth2PasswordBearer(tokenUrl = "token")
+
+        self.logger         = context.logger
         
     @abstractmethod
     def registerRoutes(self):

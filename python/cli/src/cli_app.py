@@ -4,18 +4,13 @@ import sys
 from pathlib            import Path
 
 # User packages
-from core               import user_module, logs, install
+from core               import common, context, debugger, install, logs, mode, user_module
 from my_secrets         import secrets_mgr
 
 # Local package
 from .cli_cmd_history   import CLICmdHistory
-from .cli_context       import *
 from .cli_program       import *
-from .cli_program_mode  import *
 from .cli_argparser     import *
-from .cli_utilities     import *
-
-from .cli_debug         import *
 
 class ArgValidator:
     # If path is not empty the directory or file must exist.
@@ -23,7 +18,7 @@ class ArgValidator:
         self.mustExist = mustExist
 
     def parseDirPath(self, path: str):
-        if path == "" or Path(GetFullPath(path)).is_dir():
+        if path == "" or Path(common.GetFullPath(path)).is_dir():
             return path
         elif self.mustExist:
             raise NotADirectoryError(path)
@@ -31,7 +26,7 @@ class ArgValidator:
             return path
                 
     def parseFilePath(self, path: str):
-        if path == "" or Path(GetFullPath(path)).is_file():
+        if path == "" or Path(common.GetFullPath(path)).is_file():
             return path
         elif self.mustExist:
             raise FileNotFoundError(path)
@@ -61,14 +56,14 @@ class CLIApp(user_module.UserModule):
         
         # Initialize early to enable debugging
         logMgr          = logs.ConfigureConsoleOnlyLogging(appName + "_Logger")
-        self.context    = CLIContext(logMgr.getSysLogger())
+        self.context    = context.ProgramContext(logMgr.getSysLogger())
         self.secretsMgr = secrets_mgr.SecretsMgr(appName, logMgr)
 
         # Trigger debugging as early as possible if specified in argument
         if "--debug" in sys.argv:
             # Assume debugpy is installed
             logMgr.getSysLogger().info(f"Debugging: Enabled")
-            self.debugger = CLIDebugger(logMgr.getSysLogger(), self.context)
+            self.debugger = debugger.ProgramDebugger(logMgr.getSysLogger(), self.context)
             self.debugger.wait()
 
         # Initialize parent class
@@ -232,7 +227,7 @@ class CLIApp(user_module.UserModule):
                 self.secretsFilepath = args.secrets_file
                 if self.secretsFilepath != "":
                     self.logger.debug(f"Secrets filepath: {self.secretsFilepath}")
-                    fullPathToEnv = GetFullPath(os.path.expanduser(self.secretsFilepath))
+                    fullPathToEnv = common.GetFullPath(os.path.expanduser(self.secretsFilepath))
                     self.secretsMgr.loadFromEnv(fullPathToEnv)
                 elif args.use_keyring:
                     self.logger.debug(f"Keyring secrets enabled")
@@ -264,17 +259,17 @@ class CLIApp(user_module.UserModule):
     # A bit of a chicken and the egg issue where interactive mode has to be known before the arguments are parsed
     # to install the appropriate sub_parser.
     def getModeFromArgv(self):
-        modes = [m.value for m in CLIProgramMode]
+        modes = [m.value for m in mode.ProgramMode]
         for index in range(0, len(sys.argv)-1):
             curr = sys.argv[index].lower()
             if curr == "-M" or curr == "--mode":
-                mode = sys.argv[index+1].lower()
-                if mode in modes:
-                    self.context.mode = CLIProgramMode(mode)
+                currMode = sys.argv[index+1].lower()
+                if currMode in modes:
+                    self.context.mode = mode.ProgramMode(currMode)
 
         # Default to "command" mode
-        if self.context.mode == CLIProgramMode.Undefined:
-            self.context.mode = CLIProgramMode.Command
+        if self.context.mode == mode.ProgramMode.Undefined:
+            self.context.mode = mode.ProgramMode.Command
             
         return self.context.mode
      
@@ -283,7 +278,7 @@ class CLIApp(user_module.UserModule):
 
         if program is not None:
             # If running in interactive mode create a new parser
-            isInteractive = (self.getModeFromArgv() == CLIProgramMode.Interactive)
+            isInteractive = (self.getModeFromArgv() == mode.ProgramMode.Interactive)
             program.doInit(CLIAppArgParser(self.commandPrompt) if isInteractive else self.argParser, 
                            self.context, 
                            self.secretsMgr)
@@ -303,13 +298,13 @@ class CLIApp(user_module.UserModule):
             # Execute either as command, interactive program or (background) service
             if parsedArgs is not None and program.configure():
                 try:
-                    if self.context.mode == CLIProgramMode.Interactive:
+                    if self.context.mode == mode.ProgramMode.Interactive:
                         self.logger.info(f"Running {self.appName} in interactive mode.")
                         exitCode = program.runInteractive(self.commandPrompt)
-                    elif self.context.mode == CLIProgramMode.Service:
+                    elif self.context.mode == mode.ProgramMode.Service:
                         self.logger.info(f"Running {self.appName} as a service.")
                         exitCode = program.runService()
-                    elif self.context.mode == CLIProgramMode.Command:
+                    elif self.context.mode == mode.ProgramMode.Command:
                         self.logger.info(f"Executing a {self.appName} command.")
                         exitCode = program.runCommand(parsedArgs)
                     else:

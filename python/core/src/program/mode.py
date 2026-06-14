@@ -1,6 +1,6 @@
 from enum import Enum
 
-class CLIProgramMode(Enum):
+class ProgramMode(Enum):
     Interactive = "interactive"
     Command     = "command"
     Service     = "service"

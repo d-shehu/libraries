@@ -9,13 +9,13 @@ from enum               import Enum
 from typing             import Dict, Optional, List, get_args, get_origin
 
 # User packages
-from core               import user_module
+from core               import user_module, context, mode
 from my_secrets         import secrets_mgr 
 
-# Local package
+# This package
 from .cli_argparser     import *
 from .cli_cmd_history   import CLICmdHistory
-from .cli_context       import *
+
 
 class CLIProgram(user_module.UserModule):
     def __init__(self, appLogMgr):
@@ -25,11 +25,11 @@ class CLIProgram(user_module.UserModule):
         self.cmdParser      = None
 
         self.cmdHandlers:   Dict[str, CLICommand]   = {}
-        self.context:       Optional[CLIContext]    = None
+        self.context:       Optional[context.ProgramContext]    = None
         self.secretMgr:     Optional[secrets_mgr.SecretsMgr] = None
         self.cmdHistory:    Optional[CLICmdHistory] = None
 
-    def doInit(self, argParser, context: CLIContext, secretsMgr: secrets_mgr.SecretsMgr):
+    def doInit(self, argParser, context: context.ProgramContext, secretsMgr: secrets_mgr.SecretsMgr):
         self.argParser  = argParser
         self.context    = context
         self.secretMgr  = secretsMgr
@@ -59,7 +59,7 @@ class CLIProgram(user_module.UserModule):
             "clear": CLICommand(self.cmdParser, name="clear", funHandler=self.handleClear, helpStr="Clear console.")
         }
 
-        if self.context is not None and self.context.mode == CLIProgramMode.Interactive:
+        if self.context is not None and self.context.mode == mode.ProgramMode.Interactive:
             self.addHandler(
                 CLICommand(self.cmdParser, "quit",  self.handleQuit,  "Exit from interactive mode.")
             )

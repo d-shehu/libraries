@@ -101,6 +101,9 @@ class UserMgrFiles(UserMgrBase):
                 success = not errorAdding
             except Exception as e:
                 raise LookupError(f"Exception while trying to read from users file: {USERS_FILE}.")
+        # No users may have been created as yet especially if this is the 1st run.
+        elif not self.usersFile.exists():
+            success = True
 
         return success
 

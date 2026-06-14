@@ -19,6 +19,7 @@ class APIContext:
         self.processingDir  = processingDir
         self.processor      = processor
         self.userMgr        = userMgr
+        
         # TODO: consider switching to asymmetric encryption and key management. Params shouldn't be hard-coded.
         self.userAuth       = UserAuth(processingDir, 
                                        secrets.token_hex(32), 

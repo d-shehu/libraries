@@ -1,11 +1,9 @@
-from .cli_context      import * 
+class ProgramDebugger:
 
-class CLIDebugger:
-
-    def __init__(self, logger, cliContext):
+    def __init__(self, logger, pgmContext):
         self.logger = logger
-        self.debugAddress   = cliContext.getEnvVariable("DEBUG_ADDRESS", "0.0.0.0")
-        self.debugPort      = cliContext.getEnvVariable("DEBUG_PORT", 3000)
+        self.debugAddress   = pgmContext.getEnvVariable("DEBUG_ADDRESS", "0.0.0.0")
+        self.debugPort      = pgmContext.getEnvVariable("DEBUG_PORT", 3000)
         self.isListening    = False
         self.isDone         = False
 

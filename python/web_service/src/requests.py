@@ -1,7 +1,7 @@
 
 from abc            import ABC, abstractmethod
-from enum           import Enum
-from typing         import Generic, Optional, TypeVar
+from enum           import Enum, IntFlag
+from typing         import ClassVar, Optional
 
 import json
 import time
@@ -17,7 +17,7 @@ class Priority(Enum):
     P4_Low      = "p4"
     P5_Lowest   = "P5" 
 
-class Status(Enum):
+class Status(IntFlag):
     Undefined   = 0
     Created     = 0x1
     Enqueued    = 0x2
@@ -31,57 +31,64 @@ class Status(Enum):
     Any         = Created | Enqueued | Processing | Succeeded | Failed | Canceled | Expired
 
 class RequestPayload(ABC):
-    def __init__(self, data: dict):
-        for key, value in data.items():
-            setattr(self, key, value)
-
     @abstractmethod
-    def decode(self, dict) -> bool:
-        pass
-    
-    @abstractmethod
-    def encode(self) -> str:
+    def encode(self) -> dict:
         pass
 
-# User-defined subclass of 'RequestPayload'.
-PayloadType = TypeVar("PayloadType", bound = RequestPayload)
-    
-class Request(Generic[PayloadType]):
-    def __init__(self, userID: uuid.UUID, priority = Priority.P3_Medium, status: Status = Status.Created, 
-                 id: uuid.UUID = uuid.uuid4(), timestamp = time.time()):
-        self.userID:    uuid.UUID   = userID
-        self.priority:  Priority    = priority # Priority, optional and assumed to be medium
-        self.status:    Status      = status # User can cancel requests
-        self.id:        uuid.UUID   = id
-        self.timestamp: float       = timestamp # Keep track of when request was made
+class Request:
+    _registry: ClassVar[dict[str, type["Request"]]] = {}
 
-        self.payload: Optional[PayloadType]  = None
+    def __init__(self, 
+                 userID: uuid.UUID, 
+                 priority                   = Priority.P3_Medium, 
+                 status                     = Status.Created, 
+                 id: Optional[uuid.UUID]    = None, 
+                 timestamp: Optional[float] = None):
         
-    @staticmethod
-    def field_hook(dict):
-        if "userID" in dict:
-            dict["userID"] = uuid.UUID(dict["userID"])
-        if "id" in dict:
-            dict["id"] = uuid.UUID(dict["id"])
-        if "priority" in dict:
-            # Try as enum value or name
-            try:
-                dict["priority"] = Priority[dict["priority"]]
-            except:
-                dict["priority"] = Priority(dict["priority"])
-        if "status" in dict:
-            # Try as enum value or name
-            try:
-                dict["status"] = Status[dict["status"]]
-            except:
-                dict["status"] = Status(dict["status"])
-        if "payload" in dict:
-            payload: Optional[PayloadType] = None
-            if payload is not None:
-                payload = payload(**dict["payload"])
-                payload.decode()
-            dict["payload"] = payload
-        return dict
+        self.userID:    uuid.UUID   = userID
+        self.priority:  Priority    = priority  # Priority, optional and assumed to be medium
+        self.status:    Status      = status    # User can cancel requests
+        # All requests must have a unique ID
+        self.id:        uuid.UUID   = id if id is not None else uuid.uuid4()
+        # Keep track of when request was made
+        self.timestamp: float       = timestamp if timestamp is not None else time.time()
+
+        self.payload: Optional[RequestPayload]  = None
+
+    def __init_subclass__(cls, **kwargs):
+        super().__init_subclass__(**kwargs)
+        Request._registry[cls.__name__] = cls
+
+    def to_dict(self):
+        return {
+            "type":         type(self).__name__,
+            "userID":       str(self.userID),
+            "priority":     self.priority.name,
+            "status":       self.status.name,
+            "id":           str(self.id),
+            "timestamp":    self.timestamp,
+            "payload":      self.payload.encode() if self.payload is not None else None
+        }
+    
+    @classmethod
+    def from_dict(cls, data):
+        targetCls = Request._registry[data["type"]]
+        obj = targetCls(
+            userID      = uuid.UUID(data["userID"]),
+            priority    = Priority[data["priority"]],
+            status      = Status[data["status"]],
+            id          = uuid.UUID(data["id"]),
+            timestamp   = float(data["timestamp"]),
+        )
+
+        if "payload" in data:
+            obj.payload = targetCls._createPayload(data["payload"])
+
+        return obj
+    
+    @classmethod
+    def _createPayload(cls, data: dict) -> Optional[RequestPayload]:
+        return None
     
     def isPending(self) -> bool:
         return ((self.status.value & Status.Pending.value) != 0)
@@ -99,20 +106,11 @@ class Request(Generic[PayloadType]):
     def __lt__(self, other):
         # Order based on absolute priority. Specific users not favored.
         return (self.priority < other.priority and
-                self.timestamp < other.timestamp)
-    
+                self.timestamp < other.timestamp)    
 
 class RequestEncoder(json.JSONEncoder):
     def default(self, o):
         if isinstance(o, Request):
-            return {
-                "userID":               str(o.userID),
-                "priority":             o.priority.name,
-                "status":               o.status.name,
-                "id":                   str(o.id),
-                "timestamp":            o.timestamp
-            }
-        elif isinstance(o, RequestPayload):
-            return o.encode()
+            return o.to_dict()
         else:
             return super().default(o)

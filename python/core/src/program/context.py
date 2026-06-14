@@ -1,20 +1,20 @@
-from dotenv         import dotenv_values, set_key
-from pathlib        import Path
-from typing         import Optional, TypeVar
+from dotenv                 import dotenv_values, set_key
+from pathlib                import Path
+from typing                 import TypeVar
 
 import os
 
-from .cli_program_mode import *
-from .cli_utilities    import *
+from .mode          import *
+from .common        import *
 
-# Generic type
+# Generic type for env variables
 T = TypeVar("T")
 
-class CLIContext:
+class ProgramContext:
     def __init__(self, logger):
         self.envVariables  = {}
         
-        self.mode           = CLIProgramMode.Undefined
+        self.mode           = ProgramMode.Undefined
         self.isVerbose      = False
         self.lookInOSEnv    = True
         self.logger         = logger
@@ -62,13 +62,7 @@ class CLIContext:
         return value
     
     def getEnvVariableOfType(self, key: str, defaultValue: T) -> T:
-        value: T = defaultValue
-
-        config = self.getEnvVariable(key, defaultValue)
-        if config is not None:
-            value = type(defaultValue)(config)
-
-        return value
+        return TypeConverter.convert(self.getEnvVariable(key, defaultValue), defaultValue)
     
     def getEnvVariableStr(self, key: str, defaultValue = "") -> str:
         return str(self.getEnvVariable(key, defaultValue))
@@ -82,10 +76,10 @@ class CLIContext:
             set_key(self.envPath, key, value)
 
 
-    def getDirectory(self, envDirectory) -> Path:
+    def getDirectory(self, envDirectory, defaultValue = "") -> Path:
         dirPath = Path()
         try:
-            pathStr = self.getEnvVariable(envDirectory)
+            pathStr = self.getEnvVariable(envDirectory, defaultValue)
             if pathStr is not None:
                 path = Path(Path(pathStr).expanduser().resolve())
                 if not path.is_dir():

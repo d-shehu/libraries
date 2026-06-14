@@ -1,9 +1,7 @@
-
-from dataclasses        import dataclass
-from fastapi            import FastAPI, File, UploadFile, HTTPException, status
-from pathlib            import Path
+from abc                import abstractmethod
+from fastapi            import FastAPI
 from threading          import Thread
-from typing             import Dict, Optional
+from typing             import Optional
 
 import asyncio
 import httpx
@@ -12,21 +10,16 @@ import uvicorn
 import uuid
 
 # User module and logging
-from core import user_module, logs
+from core import logs, user_module
 
 # Local files
 from    .context    import APIContext
+from    .params     import ServiceParams
 from    .processor  import Processor
 from    .router     import ServiceRouter
 from    .user_mgr   import UserMgrBase
 
-@dataclass
-class ServiceParams:
-    processingDir:  Path
-    usersDir:       Path
-    customParams:   Dict
-
-class FastAPIService(user_module.UserModule):  
+class FastAPIService(user_module.UserModule):
     def __init__(self, 
                  params: ServiceParams, 
                  serviceID: uuid.UUID, 
@@ -44,30 +37,54 @@ class FastAPIService(user_module.UserModule):
 
         self.serviceID      = serviceID
 
-    # Can be overriden if APIContext is subclassed
-    def initContext(self, processor: Processor, userMgr: UserMgrBase):
-        self.context = APIContext(
+    @abstractmethod
+    def createProcessor(self) -> Processor:
+        pass # Must define in subclass with desired processor subclass
+
+    @abstractmethod
+    def createUserMgr(self) -> UserMgrBase:
+        pass # Must define in subclass with desired UsrMgr implementation
+
+    @abstractmethod
+    def createRouter(self) -> ServiceRouter:
+        pass # Define custom routes and APIs
+
+    # Can be overriden if APIContext needs to be subclassed for custom service.
+    def createAPIContext(self) -> APIContext:
+        return APIContext(
             self.serviceID,
             self.params.processingDir,
-            processor,
-            userMgr,
+            self.createProcessor(),
+            self.createUserMgr(),
             self.asyncClient,
             self.logger
         )
-        #     serviceID,
-        #     processingDir=self.processingDir,
-        #     processor,
-        #     userMgr,
-        #     self.asyncClient,
-        #     self.logger
-        # )
-        self.context.load()     
 
-    def registerRouters(self, router: ServiceRouter) -> None:
+    def initContext(self) -> bool:
+        success = False
+
+        try:
+            if self.params.isValid:
+                self.context = self.createAPIContext()
+                self.registerRouters(self.createRouter())
+            
+            success = (self.params.isValid 
+                    and self.context is not None 
+                    and self.context.load())
+        except:
+            self.logger.exception("Unable to initialize service context due to exception.")
+    
+        return success
+
+    def registerRouters(self, router: ServiceRouter):
         router.addRouter(self.app)
 
     def start(self):
-        config = uvicorn.Config(self.app, host = "0.0.0.0", port = 8080, log_level = "info")
+        config = uvicorn.Config(self.app, 
+                                host = self.params.serverAddr, 
+                                port = self.params.serverPort, 
+                                log_level = "info")
+        
         self._server = uvicorn.Server(config)
         if self._server is not None:
             self._thread = Thread(name = "Service_Thread", target = self._run, daemon = True)
@@ -109,17 +126,26 @@ class FastAPIService(user_module.UserModule):
         del self.app
 
     # Convenience function for running service in CLI app cleanly
-    def runAndWait(self, serviceName: str):
+    def runAndWait(self) -> int:
+        retVal = os.EX_SOFTWARE
+
         try:
-            self.logger.info(f"{serviceName} is running as a service ... ")
-            self.start()
-            self.wait()
-            self.logger.info(f"{serviceName} service has exited!")
+            if self.initContext():
+                self.logger.info(f"{self.params.serviceName} is running as a service ... ")
+                self.start()
+                self.wait()
+                self.logger.info(f"{self.params.serviceName} has exited!")
+
+                retVal = os.EX_OK
+            else:
+                self.logger.error("{self.params.serviceName} unable to run because context can't be initialized.")
+                retVal = os.EX_CONFIG
+
         except KeyboardInterrupt as e:
-            self.logger.info(f"{serviceName} serverice has been interrupted by user!")
+            self.logger.info(f"{self.params.serviceName} has been interrupted by user!")
             self.stop()
             self.wait()
 
-        return os.EX_OK
+        return retVal
 
 

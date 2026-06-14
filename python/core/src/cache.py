@@ -36,6 +36,12 @@ class CacheDict(ABC, Generic[K, V]):
     def _keys(self) -> Iterator[K]:
         pass
 
+    # Use this when iterating over items without
+    # affecting the caching.
+    @abstractmethod
+    def items(self) -> Iterator[tuple[K,V]]:
+        pass
+
     @abstractmethod
     def __len__(self) -> int:
         pass
@@ -75,29 +81,49 @@ class LRUDict(CacheDict[K, V]):
     
     def _keys(self) -> Iterator[K]:
         return iter(self.dict.keys())
+    
+    def items(self) -> Iterator[tuple[K,V]]:
+        for key,entry in self.dict.items():
+            yield key, entry
 
     def __len__(self) -> int:
         return len(self.dict)
 
+@dataclass
+class LFUEntry[K,V]:
+    key: K
+    value: V
+    count: int
+    prev: Optional["LFUEntry"] = None
+    next: Optional["LFUEntry"] = None
+
+@dataclass
+class LFUBin[K,V]:
+    head: Optional[LFUEntry[K,V]] = None
+    tail: Optional[LFUEntry[K,V]] = None
+
+    @property
+    def isEmpty(self) -> bool:
+        return self.head is None and self.tail is None
 
 # Least frequently used dictionary
 class LFUDict(CacheDict[K, V]):
     def __init__(self, maxBound: int = UnboundedCacheSize):
         super().__init__(maxBound)
-        self.lookup:    Dict[K, tuple[V, int] ] = {}
-        self.frequency: Dict[int, Set[K] ]      = {}
+        self.lookup:    Dict[K, LFUEntry[K,V] ]   = {}
+        self.frequency: Dict[int, LFUBin[K,V] ]   = {}
 
-        self.maxFrequency:int = 0
-        self.minFrequency:int = 0
+        self.minFrequency:int = 1
 
     def get(self, key: K) -> Optional[V]:
         ret: Optional[V] = None
+
         if key in self.lookup:
-            valueFreq = self.lookup[key]
-            # Increase frequency
-            self._incrFreq(key, valueFreq)
-            # Return value
-            return valueFreq[0]
+            entry = self.lookup[key]
+            # Increase frequency on access
+            self._incr(key, entry)
+            ret = entry.value
+            
         return ret
 
     def put(self, key: K, value: V):
@@ -105,58 +131,108 @@ class LFUDict(CacheDict[K, V]):
             raise ValueError(f"An item already exists in cache with key {key}")
         else:
             # Add to lookup
-            valueFreq:tuple[V, int] = (value, 1)
-            self.lookup[key] = valueFreq
-            self._addToFreq(key, 1)
+            entry = LFUEntry(key, value, 1)
+            self.lookup[key] = entry
+            self._addToBin(entry)
 
     def prune(self) -> Optional[tuple[K, V]]:
         ret: Optional[tuple[K, V]] = None
 
         # If defined as bounded cache
-        if self.maxBound != UnboundedCacheSize and len(self.lookup) > self.maxBound and len(self.lookup) > 0:
-            # Get an item from lowest frequency bin
-            minSet: Set[K] = self.frequency[self.minFrequency]
-            key = minSet.pop()
-            # Bin is empty. Is there a higher frequency bin to remove from next time?
-            if len(minSet) == 0 and self.minFrequency < self.maxFrequency:
-                self.minFrequency = self.minFrequency + 1
-            if key in self.lookup:
-                valueFreq = self.lookup[key]
-                del self.lookup[key]
-                ret = (key, valueFreq[0])
+        if self.maxBound != UnboundedCacheSize and len(self.lookup) > self.maxBound:
+            if len(self.lookup) > 0:
+                # Get an item from lowest frequency bin
+                minSet: LFUBin[K,V] = self.frequency[self.minFrequency]
+                entry = self._popFromBin(minSet)
+                
+                # Remove item from cache
+                if entry is not None and entry.key in self.lookup:
+                    del self.lookup[entry.key]
+                    ret = (entry.key, entry.value)
+                else:
+                    raise IndexError(f"Couldn't find entry in lookup while pruning.")
             else:
-                raise IndexError(f"Couldn't find key {key} in lookup while pruning.")
-        else:
-            raise IndexError("Trying to prune an empty cache.")
+                raise IndexError("Trying to prune an empty cache.")
         
         return ret
-        
-    def _addToFreq(self, key: K, freq: int):
-        # Add to frequency
-        if not freq in self.frequency:
-            self.frequency[freq] = set()
-        # Add entry
-        self.frequency[freq].add(key)
-        # Higher frequency bin exists now?
-        if freq > self.maxFrequency:
-            self.maxFrequency = freq
 
-    def _incrFreq(self, key: K, valueFreq: tuple[V, int]):
-        # If item can be looked up it should in the frequency dictionary also
-        oldFreq = valueFreq[1]
-        if oldFreq not in self.frequency:
-            raise ValueError(f"Could not find key {key} in frequency lookup.")
+    def _incr(self, key: K, entry: LFUEntry):
+        # Remove from old bin and add to new higher frequency count
+        self._removeFromBin(entry)
+        entry.count = entry.count + 1
+        self._addToBin(entry)
+
+    def _addToBin(self, entry: LFUEntry[K,V]) -> LFUBin[K,V]:
+        # Does the bin exist? If not create it.
+        if not entry.count in self.frequency:
+            currBin = LFUBin[K,V]()
+            self.frequency[entry.count] = currBin
         else:
-            # Remove key from old frequency set
-            oldSet = self.frequency[oldFreq]
-            oldSet.remove(key)
-            self._addToFreq(key, oldFreq + 1)
-            # Update lowest frequency bin if lowest is now empty
-            if len(oldSet) == 0 and self.minFrequency == oldFreq:
-                self.minFrequency = self.minFrequency + 1
+            currBin = self.frequency[entry.count]
 
+        # Bin is empty and this is the 1st element?
+        if currBin.isEmpty:
+            currBin.tail = entry
+            currBin.head = entry
+            entry.next = None
+            entry.prev = None
+        # Otherwise add to the end of bin
+        elif currBin.tail is not None:
+            currBin.tail.prev = entry
+            entry.next = currBin.tail
+            entry.prev = None
+            currBin.tail = entry
+        else:
+            raise Exception("Tail of curr frequency bin is null.")
+
+        # New lower freq bin should be the min
+        if entry.count < self.minFrequency:
+            self.minFrequency = entry.count
+
+        return currBin
+
+    def _popFromBin(self, currBin: LFUBin[K, V]) -> Optional[LFUEntry[K, V]]:
+        evictedEntry: Optional[LFUEntry] = None
+
+        if currBin.tail is not None:
+            evictedEntry = currBin.tail
+            self._removeFromBin(currBin.tail)
+        else:
+            raise IndexError("Couldn't remove entry from bin as it's empty")
+
+        return evictedEntry
+    
+    def _removeFromBin(self, entry: LFUEntry[K, V]) -> LFUBin[K, V]:
+        if not entry.count in self.frequency:
+            raise IndexError(f"Couldn't find entry with value {entry.value} in frequency bin.")
+        else:
+            currBin = self.frequency[entry.count]
+
+            # Preserve the links 
+            if entry.prev is not None:
+                entry.prev.next = entry.next
+            if entry.next is not None:
+                entry.next.prev = entry.prev
+            
+            # Update the head and tail
+            if currBin.tail == entry:
+                if entry.next is None or entry.next.count == entry.count:
+                    currBin.tail = entry.next
+            if currBin.head == entry:
+                if entry.prev is None or entry.prev.count == entry.count:
+                    currBin.head = entry.prev
+
+        if currBin.isEmpty and self.minFrequency == entry.count:
+            self.minFrequency = self.minFrequency + 1
+
+        return currBin
+        
     def _keys(self) -> Iterator[K]:
         return iter(self.lookup.keys())
+    
+    def items(self) -> Iterator[tuple[K,V]]:
+        for key,entry in self.lookup.items():
+            yield key, entry.value
 
     def __len__(self) -> int:
         return len(self.lookup)

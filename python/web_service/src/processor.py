@@ -8,79 +8,21 @@ import os
 import shutil
 import tempfile
 
-# Local packages
-from core           import cache
+# User packages
 from utilities      import background_task
 
-# Local files
+# This package
+from .cache         import *
 from .requests      import *
 
 # Defines
 REQUESTS_FILE       = "requests"
 AUTO_SAVE_INTERVAL  = 15 * 60
-# TODO: set higher after testing
-MAX_CACHED_REQUEST: int = 10
 
-HaltRequest = (Priority.P1_Critical, uuid.UUID(""))
+HaltRequest = (Priority.P1_Critical, uuid.UUID(hex="1a220052-72bf-46f2-aca6-07f4a386945f"))
+
 RequestPriorityQueue: TypeAlias = PriorityQueue[Tuple[Priority, uuid.UUID]]
 
-class RequestCache(cache.Cache[uuid.UUID, Request]):
-
-    class RequestFetchHandler(cache.CacheFetchItemHandler[uuid.UUID,Request]):
-        def __init__(self, processingDir: Path, logger):
-            super().__init__()
-
-            self.processingDir = processingDir
-            self.logger = logger
-
-        def __call__(self, key: uuid.UUID) -> Optional[Request]:
-            ret: Optional[Request] = None
-
-            try:
-                requestFilepath = Path(self.processingDir, str(key), ".json")
-                with open(requestFilepath) as f:
-                    data = json.load(f, object_hook = Request.field_hook)
-                    ret = Request(**data)
-            except Exception as e:
-                self.logger.exception(f"Unable to load request with id {key} from file.")
-
-            return ret
-        
-    class RequestEvictHandler(cache.CacheEvictItemHandler[uuid.UUID,Request]):
-        def __init__(self, processingDir: Path, logger):
-            super().__init__()
-
-            self.processingDir = processingDir
-            self.logger = logger
-
-        def __call__(self, key: uuid.UUID, value: Request):
-            ret: Optional[Request] = None
-
-            try:
-                tempPath = ""
-                with tempfile.NamedTemporaryFile("w", dir = self.processingDir, delete = False) as tmpFile:
-                    tmpFile.write(json.dumps(value, cls = RequestEncoder))
-                    tmpFile.flush()
-                    os.fsync(tmpFile.fileno())
-                    tempPath = tmpFile.name
-
-                # If successfully then copy to processing
-                processingPath = Path(self.processingDir, str(key), ".json")
-                if Path(tempPath).is_file():
-                    shutil.move(tempPath, processingPath)
-                else:
-                    raise Exception(f"Unable to move file to {processingPath}.")
-            except Exception as e:
-                self.logger.exception(f"Unable to persist request with id {key} to file.")
-                
-
-    def __init__(self, processingDir: Path, logger):
-        super().__init__(MAX_CACHED_REQUEST, cache.CacheReplacementPolicy.LFU)
-
-        self.processingDir = processingDir
-        self.setFetchHandler(RequestCache.RequestFetchHandler(processingDir, logger))
-        self.setEvictHandler(RequestCache.RequestEvictHandler(processingDir, logger))
-    
 class Processor(background_task.BackgroundTask):
     DEFAULT_MAINTENANCE_INTERVAL_SECS = 60
 
@@ -134,7 +76,7 @@ class Processor(background_task.BackgroundTask):
         lsRequestsPersist = []
         dict = self.cache.acquireDict()
         if dict is not None:
-            for key in dict:
+            for key,val in dict.items():
                 request: Optional[Request] = dict.get(key)
                 # Persist any unfullfilled and unexpired requests not yet processed.
                 if request is not None and request.isPending() and not request.checkExpired():
@@ -167,7 +109,7 @@ class Processor(background_task.BackgroundTask):
             if entry.is_file() and Processor._isValidRequestFilename(entry):
                 recordsFilepath = Path(requestsDir, entry.stem + ".json")
                 with open(recordsFilepath) as f:
-                    data = json.load(f, object_hook = Request.field_hook)
+                    data = json.load(f)
                     request = Request(**data)
                     # Is it still pending?
                     if request.isPending():
@@ -212,12 +154,12 @@ class Processor(background_task.BackgroundTask):
                             request.status = Status.Processing
 
                     try:
-                        self._processRequest(request)
+                        request.status = self._processRequest(request)
                     except Exception as e:
                         self.logger.exception(f"Unable to process request: {request}")
                         request.status = Status.Failed
                 else:
-                    self.logger.exceptionf(f"Unable to read request with id {reqPair[1]} from priority queue")
+                    self.logger.exception(f"Unable to read request with id {reqPair[1]} from priority queue")
 
             else:
                 self.logger.warning("Received halt request. Assuming user requested program to exit.")
